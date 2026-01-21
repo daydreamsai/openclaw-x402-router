@@ -2,8 +2,9 @@ import type { Command } from "commander";
 import { defaultRuntime } from "../../runtime.js";
 import { emitCliBanner } from "../banner.js";
 import { getCommandPath, hasHelpOrVersion } from "../argv.js";
-import { ensureConfigReady } from "./config-guard.js";
 import { ensurePluginRegistryLoaded } from "../plugin-registry.js";
+import { commandRequiresPluginRegistry } from "./command-metadata.js";
+import { ensureConfigReady } from "./config-guard.js";
 
 function setProcessTitleForCommand(actionCommand: Command) {
   let current: Command = actionCommand;
@@ -15,20 +16,17 @@ function setProcessTitleForCommand(actionCommand: Command) {
   process.title = `clawdbot-${name}`;
 }
 
-// Commands that need channel plugins loaded
-const PLUGIN_REQUIRED_COMMANDS = new Set(["message", "channels", "directory"]);
-
 export function registerPreActionHooks(program: Command, programVersion: string) {
   program.hook("preAction", async (_thisCommand, actionCommand) => {
     setProcessTitleForCommand(actionCommand);
     emitCliBanner(programVersion);
     const argv = process.argv;
     if (hasHelpOrVersion(argv)) return;
+    const needsPlugins = commandRequiresPluginRegistry(actionCommand);
     const commandPath = getCommandPath(argv, 2);
     if (commandPath[0] === "doctor") return;
     await ensureConfigReady({ runtime: defaultRuntime, commandPath });
-    // Load plugins for commands that need channel access
-    if (PLUGIN_REQUIRED_COMMANDS.has(commandPath[0])) {
+    if (needsPlugins) {
       ensurePluginRegistryLoaded();
     }
   });

@@ -8,6 +8,7 @@ import { fixSecurityFootguns } from "../security/fix.js";
 import { formatDocsLink } from "../terminal/links.js";
 import { isRich, theme } from "../terminal/theme.js";
 import { formatCliCommand } from "./command-format.js";
+import { markCommandRequiresPluginRegistry } from "./program/command-metadata.js";
 
 type SecurityAuditOptions = {
   json?: boolean;
@@ -36,6 +37,7 @@ export function registerSecurityCli(program: Command) {
       () =>
         `\n${theme.muted("Docs:")} ${formatDocsLink("/cli/security", "docs.clawd.bot/cli/security")}\n`,
     );
+  markCommandRequiresPluginRegistry(security);
 
   security
     .command("audit")

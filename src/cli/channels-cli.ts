@@ -1,5 +1,4 @@
 import type { Command } from "commander";
-import { listChannelPlugins } from "../channels/plugins/index.js";
 import {
   channelsAddCommand,
   channelsCapabilitiesCommand,
@@ -13,9 +12,11 @@ import { danger } from "../globals.js";
 import { defaultRuntime } from "../runtime.js";
 import { formatDocsLink } from "../terminal/links.js";
 import { theme } from "../terminal/theme.js";
+import { resolveCliChannelOptions } from "./channel-options.js";
 import { runChannelLogin, runChannelLogout } from "./channel-auth.js";
 import { runCommandWithRuntime } from "./cli-utils.js";
 import { hasExplicitOptions } from "./command-options.js";
+import { markCommandRequiresPluginRegistry } from "./program/command-metadata.js";
 
 const optionNamesAdd = [
   "channel",
@@ -58,9 +59,7 @@ function runChannelsCommandWithDanger(action: () => Promise<void>, label: string
 }
 
 export function registerChannelsCli(program: Command) {
-  const channelNames = listChannelPlugins()
-    .map((plugin) => plugin.id)
-    .join("|");
+  const channelNames = resolveCliChannelOptions().join("|");
   const channels = program
     .command("channels")
     .description("Manage chat channel accounts")
@@ -72,6 +71,7 @@ export function registerChannelsCli(program: Command) {
           "docs.clawd.bot/cli/channels",
         )}\n`,
     );
+  markCommandRequiresPluginRegistry(channels);
 
   channels
     .command("list")

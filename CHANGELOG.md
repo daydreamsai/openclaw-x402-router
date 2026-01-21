@@ -31,6 +31,7 @@ Docs: https://docs.clawd.bot
 - TUI: keep thinking blocks ordered before content during streaming and isolate per-run assembly. (#1202) — thanks @aaronveklabs.
 - TUI: align custom editor initialization with the latest pi-tui API. (#1298) — thanks @sibbl.
 - CLI: avoid duplicating --profile/--dev flags when formatting commands.
+- CLI: load channel plugins for commands that need registry-backed lookups. (#1338) — thanks @MaudeBot.
 - Status: route native `/status` to the active agent so model selection reflects the correct profile. (#1301)
 - Exec: prefer bash when fish is default shell, falling back to sh if bash is missing. (#1297) — thanks @ysqander.
 - Exec: merge login-shell PATH for host=gateway exec while keeping daemon PATH minimal. (#1304)

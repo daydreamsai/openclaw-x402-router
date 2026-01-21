@@ -8,9 +8,10 @@ import { defaultRuntime } from "../../runtime.js";
 import { formatDocsLink } from "../../terminal/links.js";
 import { theme } from "../../terminal/theme.js";
 import { runCommandWithRuntime } from "../cli-utils.js";
+import { markCommandRequiresPluginRegistry } from "./command-metadata.js";
 
 export function registerConfigureCommand(program: Command) {
-  program
+  const configure = program
     .command("configure")
     .description("Interactive prompt to set up credentials, devices, and agent defaults")
     .addHelpText(
@@ -48,4 +49,5 @@ export function registerConfigureCommand(program: Command) {
         await configureCommandWithSections(sections as never, defaultRuntime);
       });
     });
+  markCommandRequiresPluginRegistry(configure);
 }

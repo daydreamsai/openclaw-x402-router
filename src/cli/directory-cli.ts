@@ -8,6 +8,7 @@ import { resolveMessageChannelSelection } from "../infra/outbound/channel-select
 import { defaultRuntime } from "../runtime.js";
 import { formatDocsLink } from "../terminal/links.js";
 import { theme } from "../terminal/theme.js";
+import { markCommandRequiresPluginRegistry } from "./program/command-metadata.js";
 
 function parseLimit(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -42,6 +43,7 @@ export function registerDirectoryCli(program: Command) {
     .action(() => {
       directory.help({ error: true });
     });
+  markCommandRequiresPluginRegistry(directory);
 
   const withChannel = (cmd: Command) =>
     cmd

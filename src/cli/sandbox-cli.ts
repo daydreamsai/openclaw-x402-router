@@ -5,6 +5,7 @@ import { sandboxExplainCommand } from "../commands/sandbox-explain.js";
 import { defaultRuntime } from "../runtime.js";
 import { formatDocsLink } from "../terminal/links.js";
 import { theme } from "../terminal/theme.js";
+import { markCommandRequiresPluginRegistry } from "./program/command-metadata.js";
 
 // --- Types ---
 
@@ -142,7 +143,7 @@ export function registerSandboxCli(program: Command) {
 
   // --- Explain Command ---
 
-  sandbox
+  const explain = sandbox
     .command("explain")
     .description("Explain effective sandbox/tool policy for a session/agent")
     .option("--session <key>", "Session key to inspect (defaults to agent main)")
@@ -161,4 +162,5 @@ export function registerSandboxCli(program: Command) {
         ),
       ),
     );
+  markCommandRequiresPluginRegistry(explain);
 }

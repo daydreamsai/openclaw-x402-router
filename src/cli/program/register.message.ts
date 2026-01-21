@@ -2,6 +2,7 @@ import type { Command } from "commander";
 import { formatDocsLink } from "../../terminal/links.js";
 import { theme } from "../../terminal/theme.js";
 import type { ProgramContext } from "./context.js";
+import { markCommandRequiresPluginRegistry } from "./command-metadata.js";
 import { createMessageCliHelpers } from "./message/helpers.js";
 import { registerMessageDiscordAdminCommands } from "./message/register.discord-admin.js";
 import {
@@ -39,6 +40,7 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/message", "docs.clawd.bot/cli/mes
     .action(() => {
       message.help({ error: true });
     });
+  markCommandRequiresPluginRegistry(message);
 
   const helpers = createMessageCliHelpers(message, ctx.messageChannelOptions);
   registerMessageSendCommand(message, helpers);

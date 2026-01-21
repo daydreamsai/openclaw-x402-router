@@ -86,6 +86,7 @@ const routeSessions: RouteSpec = {
 
 const routeAgentsList: RouteSpec = {
   match: (path) => path[0] === "agents" && path[1] === "list",
+  loadPlugins: true,
   run: async (argv) => {
     const json = hasFlag(argv, "--json");
     const bindings = hasFlag(argv, "--bindings");

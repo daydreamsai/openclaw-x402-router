@@ -7,6 +7,7 @@ import { defaultRuntime } from "../../runtime.js";
 import { formatDocsLink } from "../../terminal/links.js";
 import { theme } from "../../terminal/theme.js";
 import { runCommandWithRuntime } from "../cli-utils.js";
+import { markCommandRequiresPluginRegistry } from "./command-metadata.js";
 import { parsePositiveIntOrUndefined } from "./helpers.js";
 
 function resolveVerbose(opts: { verbose?: boolean; debug?: boolean }): boolean {
@@ -24,7 +25,7 @@ function parseTimeoutMs(timeout: unknown): number | null | undefined {
 }
 
 export function registerStatusHealthSessionsCommands(program: Command) {
-  program
+  const status = program
     .command("status")
     .description("Show channel health and recent session recipients")
     .option("--json", "Output JSON instead of text", false)
@@ -72,8 +73,9 @@ Examples:
         );
       });
     });
+  markCommandRequiresPluginRegistry(status);
 
-  program
+  const health = program
     .command("health")
     .description("Fetch health from the running gateway")
     .option("--json", "Output JSON instead of text", false)
@@ -103,6 +105,7 @@ Examples:
         );
       });
     });
+  markCommandRequiresPluginRegistry(health);
 
   program
     .command("sessions")

@@ -34,12 +34,16 @@ vi.mock("../channels/plugins/index.js", () => ({
   normalizeChannelId,
 }));
 
-vi.mock("../config/config.js", () => ({
-  loadConfig: vi.fn().mockReturnValue({}),
-}));
+vi.mock("../config/config.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../config/config.js")>();
+  return {
+    ...actual,
+    loadConfig: vi.fn().mockReturnValue({}),
+  };
+});
 
 describe("pairing cli", () => {
-  it("evaluates pairing channels when registering the CLI (not at import)", async () => {
+  it("defers pairing channel lookup until command execution", async () => {
     listPairingChannels.mockClear();
 
     const { registerPairingCli } = await import("./pairing-cli.js");
@@ -49,6 +53,10 @@ describe("pairing cli", () => {
     program.name("test");
     registerPairingCli(program);
 
+    expect(listPairingChannels).not.toHaveBeenCalled();
+
+    listChannelPairingRequests.mockResolvedValueOnce([]);
+    await program.parseAsync(["pairing", "list", "telegram"], { from: "user" });
     expect(listPairingChannels).toHaveBeenCalledTimes(1);
   });
 

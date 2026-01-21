@@ -14,10 +14,11 @@ import { theme } from "../../terminal/theme.js";
 import { hasExplicitOptions } from "../command-options.js";
 import { createDefaultDeps } from "../deps.js";
 import { runCommandWithRuntime } from "../cli-utils.js";
+import { markCommandRequiresPluginRegistry } from "./command-metadata.js";
 import { collectOption } from "./helpers.js";
 
 export function registerAgentCommands(program: Command, args: { agentChannelOptions: string }) {
-  program
+  const agent = program
     .command("agent")
     .description("Run an agent turn via the Gateway (use --local for embedded)")
     .requiredOption("-m, --message <text>", "Message body for the agent")
@@ -67,6 +68,7 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.clawd.bot/cli/agent
         await agentCliCommand(opts, defaultRuntime, deps);
       });
     });
+  markCommandRequiresPluginRegistry(agent);
 
   const agents = program
     .command("agents")
@@ -76,6 +78,7 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.clawd.bot/cli/agent
       () =>
         `\n${theme.muted("Docs:")} ${formatDocsLink("/cli/agents", "docs.clawd.bot/cli/agents")}\n`,
     );
+  markCommandRequiresPluginRegistry(agents);
 
   agents
     .command("list")
