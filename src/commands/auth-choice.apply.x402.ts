@@ -9,6 +9,6 @@ export async function applyAuthChoiceX402(
     pluginId: "opencode-x402-auth",
     providerId: "x402",
     methodId: "wallet",
-    label: "x402",
+    label: "Daydreams Router (x402)",
   });
 }

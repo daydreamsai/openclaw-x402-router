@@ -1,7 +1,7 @@
 import { emptyPluginConfigSchema } from "clawdbot/plugin-sdk";
 
 const PROVIDER_ID = "x402";
-const PROVIDER_LABEL = "x402";
+const PROVIDER_LABEL = "Daydreams Router (x402)";
 const PLUGIN_ID = "opencode-x402-auth";
 
 const DEFAULT_ROUTER_URL = "http://localhost:8080";
@@ -41,8 +41,8 @@ function normalizeNetwork(value: string): string | null {
 
 const x402Plugin = {
   id: PLUGIN_ID,
-  name: "x402 Auth",
-  description: "Permit-signed auth for x402 routers",
+  name: "Daydreams Router (x402) Auth",
+  description: "Permit-signed auth for Daydreams Router (x402)",
   configSchema: emptyPluginConfigSchema(),
   register(api) {
     api.registerProvider({
@@ -58,7 +58,7 @@ const x402Plugin = {
           run: async (ctx) => {
             await ctx.prompter.note(
               [
-                "x402 uses wallet-signed ERC-2612 permits for payment.",
+                "Daydreams Router uses wallet-signed ERC-2612 permits for payment in USDC.",
                 "Use a dedicated wallet for AI spend; keys are stored locally.",
               ].join("\n"),
               "x402",
@@ -73,7 +73,7 @@ const x402Plugin = {
             if (!normalizedKey) throw new Error("Invalid private key format");
 
             const routerInput = await ctx.prompter.text({
-              message: "x402 router URL",
+              message: "Daydreams Router URL",
               initialValue: DEFAULT_ROUTER_URL,
               validate: (value) => {
                 try {
@@ -166,7 +166,7 @@ const x402Plugin = {
               },
               defaultModel: DEFAULT_AUTO_REF,
               notes: [
-                `Router base URL set to ${routerUrl}.`,
+                `Daydreams Router base URL set to ${routerUrl}.`,
                 "Permit caps apply per signed session; update plugins.entries.opencode-x402-auth.config to change.",
               ],
             };

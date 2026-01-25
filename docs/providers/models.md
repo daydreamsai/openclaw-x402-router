@@ -34,7 +34,7 @@ See [Venice AI](/providers/venice).
 - [OpenAI (API + Codex)](/providers/openai)
 - [Anthropic (API + Claude Code CLI)](/providers/anthropic)
 - [OpenRouter](/providers/openrouter)
-- [x402](/providers/x402)
+- [Daydreams Router (x402)](/providers/x402)
 - [Vercel AI Gateway](/providers/vercel-ai-gateway)
 - [Moonshot AI (Kimi + Kimi Code)](/providers/moonshot)
 - [Synthetic](/providers/synthetic)

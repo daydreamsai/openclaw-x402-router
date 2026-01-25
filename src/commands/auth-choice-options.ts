@@ -116,8 +116,8 @@ const AUTH_CHOICE_GROUP_DEFS: {
   },
   {
     value: "x402",
-    label: "x402",
-    hint: "Permit-signed router",
+    label: "Daydreams Router (x402)",
+    hint: "Permit-signed USDC payments",
     choices: ["x402"],
   },
 ];
@@ -174,8 +174,8 @@ export function buildAuthChoiceOptions(params: {
   options.push({ value: "qwen-portal", label: "Qwen OAuth" });
   options.push({
     value: "x402",
-    label: "x402 (permit-signed)",
-    hint: "Wallet-signed ERC-2612 permits",
+    label: "Daydreams Router (x402)",
+    hint: "Wallet-signed ERC-2612 permits for USDC",
   });
   options.push({
     value: "copilot-proxy",

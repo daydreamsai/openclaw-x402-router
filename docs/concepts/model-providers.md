@@ -124,9 +124,10 @@ Moltbot ships with the pi‑ai catalog. These providers require **no**
 Use `models.providers` (or `models.json`) to add **custom** providers or
 OpenAI/Anthropic‑compatible proxies.
 
-### x402
+### Daydreams Router (x402)
 
-x402 uses wallet-signed ERC-2612 permits and a router base URL.
+Daydreams Router (x402) uses wallet-signed ERC-2612 permits and a router base URL.
+It lets you pay for inference with USDC.
 
 - Provider: `x402`
 - Auth: wallet private key (stored in auth profiles)
