@@ -12,11 +12,17 @@ const DEFAULT_MODEL_REF = `x402/${DEFAULT_MODEL_ID}`;
 const DEFAULT_AUTO_REF = "x402/auto";
 
 const PRIVATE_KEY_REGEX = /^0x[0-9a-fA-F]{64}$/;
+const DEFAULT_SAW_SOCKET = "/run/saw.sock";
+const DEFAULT_SAW_WALLET = "main";
 
 function normalizePrivateKey(value: string): string | null {
   const trimmed = value.trim();
   const normalized = trimmed.startsWith("0X") ? `0x${trimmed.slice(2)}` : trimmed;
   return PRIVATE_KEY_REGEX.test(normalized) ? normalized : null;
+}
+
+function buildSawSentinel(walletName: string, socketPath: string): string {
+  return `saw:${walletName}@${socketPath}`;
 }
 
 function normalizeRouterUrl(value: string): { routerUrl: string; baseUrl: string } {
@@ -50,6 +56,136 @@ const x402Plugin = {
       label: PROVIDER_LABEL,
       docsPath: "/providers/x402",
       auth: [
+        {
+          id: "saw",
+          label: "Secure Agent Wallet (SAW)",
+          hint: "Signs permits via SAW daemon (recommended)",
+          kind: "api_key",
+          run: async (ctx) => {
+            await ctx.prompter.note(
+              [
+                "SAW keeps private keys in a separate daemon process,",
+                "preventing prompt injection from exfiltrating them.",
+                "The SAW daemon must be running before use.",
+              ].join("\n"),
+              "SAW",
+            );
+
+            const socketInput = await ctx.prompter.text({
+              message: "SAW daemon socket path",
+              initialValue: DEFAULT_SAW_SOCKET,
+              validate: (value) => (value.trim() ? undefined : "Socket path required"),
+            });
+            const socketPath = String(socketInput).trim();
+
+            const walletInput = await ctx.prompter.text({
+              message: "SAW wallet name",
+              initialValue: DEFAULT_SAW_WALLET,
+              validate: (value) => (value.trim() ? undefined : "Wallet name required"),
+            });
+            const walletName = String(walletInput).trim();
+
+            const routerInput = await ctx.prompter.text({
+              message: "Daydreams Router URL",
+              initialValue: DEFAULT_ROUTER_URL,
+              validate: (value) => {
+                try {
+                  // eslint-disable-next-line no-new
+                  new URL(value);
+                  return undefined;
+                } catch {
+                  return "Invalid URL";
+                }
+              },
+            });
+            const { routerUrl, baseUrl } = normalizeRouterUrl(String(routerInput));
+
+            const capInput = await ctx.prompter.text({
+              message: "Permit cap (USD)",
+              initialValue: String(DEFAULT_PERMIT_CAP_USD),
+              validate: (value) => (normalizePermitCap(value) ? undefined : "Invalid amount"),
+            });
+            const permitCap = normalizePermitCap(String(capInput)) ?? DEFAULT_PERMIT_CAP_USD;
+
+            const networkInput = await ctx.prompter.text({
+              message: "Network (CAIP-2)",
+              initialValue: DEFAULT_NETWORK,
+              validate: (value) => (normalizeNetwork(value) ? undefined : "Required"),
+            });
+            const network = normalizeNetwork(String(networkInput)) ?? DEFAULT_NETWORK;
+
+            const existingPluginConfig =
+              ctx.config.plugins?.entries?.[PLUGIN_ID]?.config &&
+              typeof ctx.config.plugins.entries[PLUGIN_ID]?.config === "object"
+                ? (ctx.config.plugins.entries[PLUGIN_ID]?.config as Record<string, unknown>)
+                : {};
+
+            const pluginConfigPatch: Record<string, unknown> = { ...existingPluginConfig };
+            if (existingPluginConfig.permitCap === undefined) {
+              pluginConfigPatch.permitCap = permitCap;
+            }
+            if (!existingPluginConfig.network) {
+              pluginConfigPatch.network = network;
+            }
+
+            return {
+              profiles: [
+                {
+                  profileId: "x402:default",
+                  credential: {
+                    type: "api_key",
+                    provider: PROVIDER_ID,
+                    key: buildSawSentinel(walletName, socketPath),
+                  },
+                },
+              ],
+              configPatch: {
+                plugins: {
+                  entries: {
+                    [PLUGIN_ID]: {
+                      config: pluginConfigPatch,
+                    },
+                  },
+                },
+                models: {
+                  providers: {
+                    [PROVIDER_ID]: {
+                      baseUrl,
+                      apiKey: "x402-wallet",
+                      api: "anthropic-messages",
+                      authHeader: false,
+                      models: [
+                        {
+                          id: DEFAULT_MODEL_ID,
+                          name: "Anthropic Opus 4.5",
+                          reasoning: false,
+                          input: ["text", "image"],
+                          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                          contextWindow: 200000,
+                          maxTokens: 8192,
+                        },
+                      ],
+                    },
+                  },
+                },
+                agents: {
+                  defaults: {
+                    models: {
+                      [DEFAULT_AUTO_REF]: {},
+                      [DEFAULT_MODEL_REF]: { alias: "Opus" },
+                    },
+                  },
+                },
+              },
+              defaultModel: DEFAULT_AUTO_REF,
+              notes: [
+                `Daydreams Router base URL set to ${routerUrl}.`,
+                `SAW signing via wallet "${walletName}" at ${socketPath}.`,
+                "Permit caps apply per signed session; update plugins.entries.daydreams-x402-auth.config to change.",
+              ],
+            };
+          },
+        },
         {
           id: "wallet",
           label: "Wallet private key",

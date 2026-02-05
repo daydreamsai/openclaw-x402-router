@@ -5,5 +5,8 @@
   "description": "Clawdbot Daydreams Router (x402) auth provider plugin",
   "clawdbot": {
     "extensions": ["./index.ts"]
+  },
+  "dependencies": {
+    "@daydreamsai/saw": "link:../../../agent-wallet/packages/saw"
   }
 }

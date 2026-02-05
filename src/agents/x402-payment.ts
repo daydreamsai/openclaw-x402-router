@@ -1,8 +1,11 @@
 import type { StreamFn } from "@mariozechner/pi-agent-core";
 import type { MoltbotConfig } from "../config/config.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
 import { createPublicClient, createWalletClient, http, type Account, type Chain } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base, baseSepolia, mainnet } from "viem/chains";
+
+const log = createSubsystemLogger("agent/x402");
 
 const X402_PROVIDER_ID = "x402";
 const X402_PLUGIN_ID = "daydreams-x402-auth";
@@ -13,6 +16,45 @@ const DEFAULT_VALIDITY_SECONDS = 60 * 60;
 const DEFAULT_PAYMENT_HEADER = "PAYMENT-SIGNATURE";
 
 const PRIVATE_KEY_REGEX = /^0x[0-9a-fA-F]{64}$/;
+
+// SAW sentinel: "saw:<wallet>@<socket-path>"
+const SAW_SENTINEL_REGEX = /^saw:([^@]+)@(.+)$/;
+
+interface SawConfig {
+  walletName: string;
+  socketPath: string;
+}
+
+// Matches the return type of createSawClient from @daydreamsai/saw
+interface SawClient {
+  getAddress(): Promise<string>;
+  signEip2612Permit(payload: {
+    chain_id: number;
+    token: string;
+    name: string;
+    version: string;
+    spender: string;
+    value: string;
+    nonce: string;
+    deadline: string;
+    owner?: string;
+  }): Promise<string>;
+}
+
+type SigningBackend =
+  | { mode: "key"; wallet: ReturnType<typeof createWalletClient>; account: Account }
+  | { mode: "saw"; client: SawClient; ownerAddress: `0x${string}` };
+
+function parseSawConfig(apiKey: string | undefined): SawConfig | null {
+  if (!apiKey) return null;
+  const match = SAW_SENTINEL_REGEX.exec(apiKey.trim());
+  if (!match) return null;
+  return { walletName: match[1], socketPath: match[2] };
+}
+
+function getOwnerAddress(backend: SigningBackend): `0x${string}` {
+  return backend.mode === "key" ? backend.account.address : backend.ownerAddress;
+}
 
 const USDC_ADDRESSES: Record<string, `0x${string}`> = {
   "eip155:8453": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
@@ -322,13 +364,70 @@ async function signPermit(params: {
   };
 }
 
+async function signPermitViaSaw(params: {
+  client: SawClient;
+  ownerAddress: `0x${string}`;
+  config: RouterConfig;
+  permitCap: string;
+}): Promise<{ signature: string; nonce: string; deadline: string }> {
+  const chain = CHAINS[params.config.network] || base;
+  const chainId = Number.parseInt(params.config.network.split(":")[1] ?? "0", 10);
+  const deadline = Math.floor(Date.now() / 1000) + DEFAULT_VALIDITY_SECONDS;
+  const nonceValue = await fetchPermitNonce(
+    chain,
+    params.config.asset as `0x${string}`,
+    params.ownerAddress,
+  );
+
+  log.info("signing permit via SAW", {
+    owner: params.ownerAddress,
+    spender: params.config.facilitatorSigner,
+    network: params.config.network,
+    nonce: nonceValue.toString(),
+  });
+
+  const signature = await params.client.signEip2612Permit({
+    chain_id: chainId,
+    token: params.config.asset,
+    name: params.config.tokenName,
+    version: params.config.tokenVersion,
+    spender: params.config.facilitatorSigner,
+    value: params.permitCap,
+    nonce: nonceValue.toString(),
+    deadline: deadline.toString(),
+    owner: params.ownerAddress,
+  });
+
+  log.info("SAW permit signed", { sigPrefix: signature.slice(0, 14) });
+
+  return {
+    signature,
+    nonce: nonceValue.toString(),
+    deadline: deadline.toString(),
+  };
+}
+
 async function createCachedPermit(params: {
-  wallet: ReturnType<typeof createWalletClient>;
-  account: Account;
+  backend: SigningBackend;
   config: RouterConfig;
   permitCap: string;
 }): Promise<CachedPermit> {
-  const { signature, nonce, deadline } = await signPermit(params);
+  const { signature, nonce, deadline } =
+    params.backend.mode === "key"
+      ? await signPermit({
+          wallet: params.backend.wallet,
+          account: params.backend.account,
+          config: params.config,
+          permitCap: params.permitCap,
+        })
+      : await signPermitViaSaw({
+          client: params.backend.client,
+          ownerAddress: params.backend.ownerAddress,
+          config: params.config,
+          permitCap: params.permitCap,
+        });
+
+  const owner = getOwnerAddress(params.backend);
   const payload = {
     x402Version: 2,
     accepted: {
@@ -343,7 +442,7 @@ async function createCachedPermit(params: {
     },
     payload: {
       authorization: {
-        from: params.account.address,
+        from: owner,
         to: params.config.facilitatorSigner,
         value: params.permitCap,
         validBefore: deadline,
@@ -365,8 +464,7 @@ async function createCachedPermit(params: {
 }
 
 async function resolvePermit(params: {
-  wallet: ReturnType<typeof createWalletClient>;
-  account: Account;
+  backend: SigningBackend;
   config: RouterConfig;
   permitCap: string;
 }): Promise<CachedPermit> {
@@ -375,7 +473,7 @@ async function resolvePermit(params: {
     asset: params.config.asset,
     payTo: params.config.payTo,
     cap: params.permitCap,
-    account: params.account.address,
+    account: getOwnerAddress(params.backend),
   });
   const cached = PERMIT_CACHE.get(cacheKey);
   const now = Math.floor(Date.now() / 1000);
@@ -452,8 +550,10 @@ export function maybeWrapStreamFnWithX402Payment(params: {
   if (!params.streamFn) return params.streamFn;
   if (params.provider !== X402_PROVIDER_ID) return params.streamFn;
 
-  const privateKey = normalizePrivateKey(params.apiKey);
-  if (!privateKey) return params.streamFn;
+  // Detect signing mode: SAW sentinel first, then raw private key
+  const sawConfig = parseSawConfig(params.apiKey);
+  const privateKey = sawConfig ? null : normalizePrivateKey(params.apiKey);
+  if (!sawConfig && !privateKey) return params.streamFn;
 
   const providerConfig = params.config?.models?.providers?.[X402_PROVIDER_ID];
   const { baseUrl, routerUrl } = normalizeBaseUrl(providerConfig?.baseUrl);
@@ -469,13 +569,41 @@ export function maybeWrapStreamFnWithX402Payment(params: {
     }
   })();
 
-  const account = privateKeyToAccount(privateKey as `0x${string}`);
-  const chain = CHAINS[network] || base;
-  const wallet = createWalletClient({
-    account,
-    chain,
-    transport: http(),
-  });
+  // Build signing backend — SAW resolves the address lazily via the daemon
+  let backendPromise: Promise<SigningBackend>;
+  if (sawConfig) {
+    log.info("x402 using SAW backend", {
+      wallet: sawConfig.walletName,
+      socket: sawConfig.socketPath,
+    });
+    // Dynamic import — @daydreamsai/saw lives in the extension's dependencies,
+    // not the root package, so we suppress the TS module resolution error.
+    const sawModuleId = "@daydreamsai/saw";
+    backendPromise = (
+      import(/* webpackIgnore: true */ sawModuleId) as Promise<{
+        createSawClient: (opts: { socketPath: string; wallet: string }) => SawClient;
+      }>
+    ).then(({ createSawClient: createClient }) => {
+      const client = createClient({
+        socketPath: sawConfig.socketPath,
+        wallet: sawConfig.walletName,
+      });
+      return client.getAddress().then((addr: string) => {
+        log.info("SAW address resolved", { address: addr });
+        return {
+          mode: "saw",
+          client,
+          ownerAddress: addr as `0x${string}`,
+        } satisfies SigningBackend;
+      });
+    });
+  } else {
+    const account = privateKeyToAccount(privateKey as `0x${string}`);
+    log.info("x402 using local key backend", { address: account.address });
+    const chain = CHAINS[network] || base;
+    const wallet = createWalletClient({ account, chain, transport: http() });
+    backendPromise = Promise.resolve({ mode: "key", wallet, account } satisfies SigningBackend);
+  }
 
   const fetchWithPayment: typeof fetch = async (input, init) => {
     const url = (() => {
@@ -523,6 +651,8 @@ export function maybeWrapStreamFnWithX402Payment(params: {
       return baseFetch(input, init);
     }
 
+    const backend = await backendPromise;
+
     const sendWithPermit = async (permit: CachedPermit): Promise<Response> => {
       const headers = new Headers(init?.headers ?? {});
       const headerName = routerConfig.paymentHeader || DEFAULT_PAYMENT_HEADER;
@@ -531,7 +661,7 @@ export function maybeWrapStreamFnWithX402Payment(params: {
     };
 
     try {
-      const permit = await resolvePermit({ wallet, account, config: routerConfig, permitCap });
+      const permit = await resolvePermit({ backend, config: routerConfig, permitCap });
       const response = await sendWithPermit(permit);
 
       if (response.status !== 401 && response.status !== 402) {
@@ -556,8 +686,7 @@ export function maybeWrapStreamFnWithX402Payment(params: {
 
       const refreshedCap = maxAmountRequired || permitCap;
       const refreshed = await resolvePermit({
-        wallet,
-        account,
+        backend,
         config: routerConfig,
         permitCap: refreshedCap,
       });
@@ -572,4 +701,5 @@ export function maybeWrapStreamFnWithX402Payment(params: {
 
 export const __testing = {
   buildPermitCacheKey,
+  parseSawConfig,
 };

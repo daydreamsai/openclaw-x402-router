@@ -8,7 +8,7 @@ export async function applyAuthChoiceX402(
     authChoice: "x402",
     pluginId: "daydreams-x402-auth",
     providerId: "x402",
-    methodId: "wallet",
+    methodId: undefined,
     label: "Daydreams Router (x402)",
   });
 }
