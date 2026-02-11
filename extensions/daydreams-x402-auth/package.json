@@ -7,6 +7,6 @@
     "extensions": ["./index.ts"]
   },
   "dependencies": {
-    "@daydreamsai/saw": "link:../../../agent-wallet/packages/saw"
+    "@daydreamsai/saw": "0.1.2"
   }
 }

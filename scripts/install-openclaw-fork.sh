@@ -4,7 +4,7 @@ set -euo pipefail
 # Installs OpenClaw from a fork/tag (recommended) or branch and runs onboarding.
 #
 # Recommended release usage (immutable):
-#   OPENCLAW_REF=v2026.2.9-dreamclaw.1
+#   OPENCLAW_REF=v2026.2.9-dreamclaw.2
 #
 # Overrides:
 #   OPENCLAW_REPO=https://github.com/<org>/<repo>.git
@@ -16,7 +16,7 @@ set -euo pipefail
 #   OPENCLAW_ONBOARD_ARGS="--install-daemon --auth-choice x402"
 
 OPENCLAW_REPO="${OPENCLAW_REPO:-https://github.com/RedBeardEth/clawdbot.git}"
-OPENCLAW_REF="${OPENCLAW_REF:-v2026.2.9-dreamclaw.1}"
+OPENCLAW_REF="${OPENCLAW_REF:-v2026.2.9-dreamclaw.2}"
 OPENCLAW_BRANCH="${OPENCLAW_BRANCH:-}"
 OPENCLAW_INSTALLER="${OPENCLAW_INSTALLER:-auto}"
 OPENCLAW_BIN="${OPENCLAW_BIN:-}"
