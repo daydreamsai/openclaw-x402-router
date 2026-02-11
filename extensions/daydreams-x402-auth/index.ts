@@ -1,4 +1,4 @@
-import { emptyPluginConfigSchema } from "clawdbot/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 
 const PROVIDER_ID = "x402";
 const PROVIDER_LABEL = "Daydreams Router (x402)";
