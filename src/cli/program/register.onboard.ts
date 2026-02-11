@@ -1,6 +1,5 @@
 import type { Command } from "commander";
 import type { GatewayDaemonRuntime } from "../../commands/daemon-runtime.js";
-import { onboardCommand } from "../../commands/onboard.js";
 import type {
   AuthChoice,
   GatewayAuthChoice,
@@ -8,6 +7,7 @@ import type {
   NodeManagerChoice,
   TailscaleMode,
 } from "../../commands/onboard-types.js";
+import { onboardCommand } from "../../commands/onboard.js";
 import { defaultRuntime } from "../../runtime.js";
 import { formatDocsLink } from "../../terminal/links.js";
 import { theme } from "../../terminal/theme.js";
@@ -17,14 +17,20 @@ function resolveInstallDaemonFlag(
   command: unknown,
   opts: { installDaemon?: boolean },
 ): boolean | undefined {
-  if (!command || typeof command !== "object") return undefined;
+  if (!command || typeof command !== "object") {
+    return undefined;
+  }
   const getOptionValueSource =
     "getOptionValueSource" in command ? command.getOptionValueSource : undefined;
-  if (typeof getOptionValueSource !== "function") return undefined;
+  if (typeof getOptionValueSource !== "function") {
+    return undefined;
+  }
 
   // Commander doesn't support option conflicts natively; keep original behavior.
   // If --skip-daemon is explicitly passed, it wins.
-  if (getOptionValueSource.call(command, "skipDaemon") === "cli") return false;
+  if (getOptionValueSource.call(command, "skipDaemon") === "cli") {
+    return false;
+  }
   if (getOptionValueSource.call(command, "installDaemon") === "cli") {
     return Boolean(opts.installDaemon);
   }
@@ -38,9 +44,9 @@ export function registerOnboardCommand(program: Command) {
     .addHelpText(
       "after",
       () =>
-        `\n${theme.muted("Docs:")} ${formatDocsLink("/cli/onboard", "docs.molt.bot/cli/onboard")}\n`,
+        `\n${theme.muted("Docs:")} ${formatDocsLink("/cli/onboard", "docs.openclaw.ai/cli/onboard")}\n`,
     )
-    .option("--workspace <dir>", "Agent workspace directory (default: ~/clawd)")
+    .option("--workspace <dir>", "Agent workspace directory (default: ~/.openclaw/workspace)")
     .option("--reset", "Reset config + credentials + sessions + workspace before running wizard")
     .option("--non-interactive", "Run without prompts", false)
     .option(
@@ -68,14 +74,21 @@ export function registerOnboardCommand(program: Command) {
     .option("--openai-api-key <key>", "OpenAI API key")
     .option("--openrouter-api-key <key>", "OpenRouter API key")
     .option("--ai-gateway-api-key <key>", "Vercel AI Gateway API key")
+    .option("--cloudflare-ai-gateway-account-id <id>", "Cloudflare Account ID")
+    .option("--cloudflare-ai-gateway-gateway-id <id>", "Cloudflare AI Gateway ID")
+    .option("--cloudflare-ai-gateway-api-key <key>", "Cloudflare AI Gateway API key")
     .option("--moonshot-api-key <key>", "Moonshot API key")
-    .option("--kimi-code-api-key <key>", "Kimi Code API key")
+    .option("--kimi-code-api-key <key>", "Kimi Coding API key")
     .option("--gemini-api-key <key>", "Gemini API key")
     .option("--zai-api-key <key>", "Z.AI API key")
+    .option("--xiaomi-api-key <key>", "Xiaomi API key")
     .option("--minimax-api-key <key>", "MiniMax API key")
     .option("--synthetic-api-key <key>", "Synthetic API key")
     .option("--venice-api-key <key>", "Venice API key")
+    .option("--together-api-key <key>", "Together AI API key")
     .option("--opencode-zen-api-key <key>", "OpenCode Zen API key")
+    .option("--xai-api-key <key>", "xAI API key")
+    .option("--qianfan-api-key <key>", "QIANFAN API key")
     .option("--gateway-port <port>", "Gateway port")
     .option("--gateway-bind <mode>", "Gateway bind: loopback|tailnet|lan|auto|custom")
     .option("--gateway-auth <mode>", "Gateway auth: token|password")
@@ -118,14 +131,21 @@ export function registerOnboardCommand(program: Command) {
             openaiApiKey: opts.openaiApiKey as string | undefined,
             openrouterApiKey: opts.openrouterApiKey as string | undefined,
             aiGatewayApiKey: opts.aiGatewayApiKey as string | undefined,
+            cloudflareAiGatewayAccountId: opts.cloudflareAiGatewayAccountId as string | undefined,
+            cloudflareAiGatewayGatewayId: opts.cloudflareAiGatewayGatewayId as string | undefined,
+            cloudflareAiGatewayApiKey: opts.cloudflareAiGatewayApiKey as string | undefined,
             moonshotApiKey: opts.moonshotApiKey as string | undefined,
             kimiCodeApiKey: opts.kimiCodeApiKey as string | undefined,
             geminiApiKey: opts.geminiApiKey as string | undefined,
             zaiApiKey: opts.zaiApiKey as string | undefined,
+            xiaomiApiKey: opts.xiaomiApiKey as string | undefined,
+            qianfanApiKey: opts.qianfanApiKey as string | undefined,
             minimaxApiKey: opts.minimaxApiKey as string | undefined,
             syntheticApiKey: opts.syntheticApiKey as string | undefined,
             veniceApiKey: opts.veniceApiKey as string | undefined,
+            togetherApiKey: opts.togetherApiKey as string | undefined,
             opencodeZenApiKey: opts.opencodeZenApiKey as string | undefined,
+            xaiApiKey: opts.xaiApiKey as string | undefined,
             gatewayPort:
               typeof gatewayPort === "number" && Number.isFinite(gatewayPort)
                 ? gatewayPort
