@@ -55,7 +55,7 @@ OPENCLAW_ONBOARD_ARGS="${OPENCLAW_ONBOARD_ARGS:-onboard --install-daemon --auth-
 OPENCLAW_NPM_SCRIPT_SHELL="${OPENCLAW_NPM_SCRIPT_SHELL:-}"
 
 if [[ -z "$OPENCLAW_SPEC" && -z "$OPENCLAW_REF" && -z "$OPENCLAW_BRANCH" ]]; then
-  OPENCLAW_REF="v2026.2.9-dreamclaw.11"
+  OPENCLAW_REF="v2026.2.9-dreamclaw.12"
 fi
 
 if [[ -n "$OPENCLAW_SPEC" && ( -n "$OPENCLAW_REF" || -n "$OPENCLAW_BRANCH" ) ]]; then
@@ -644,6 +644,11 @@ run_npm() {
 }
 
 GLOBAL_BIN_HINT=""
+
+# Remove previous global install to avoid ENOTEMPTY errors during npm rename
+echo "==> Cleaning previous global install (if any)..."
+run_npm uninstall -g openclaw 2>/dev/null || true
+run_npm uninstall -g moltbot 2>/dev/null || true
 
 if [[ "$OPENCLAW_INSTALLER" == "pnpm" ]] || [[ "$OPENCLAW_INSTALLER" == "auto" && -x "$(command -v pnpm || true)" ]]; then
   echo "==> Using pnpm global install"
