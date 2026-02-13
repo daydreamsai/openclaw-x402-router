@@ -55,7 +55,7 @@ OPENCLAW_ONBOARD_ARGS="${OPENCLAW_ONBOARD_ARGS:-}"  # resolved after TTY detecti
 OPENCLAW_NPM_SCRIPT_SHELL="${OPENCLAW_NPM_SCRIPT_SHELL:-}"
 
 if [[ -z "$OPENCLAW_SPEC" && -z "$OPENCLAW_REF" && -z "$OPENCLAW_BRANCH" ]]; then
-  OPENCLAW_REF="v2026.2.9-dreamclaw.13"
+  OPENCLAW_REF="v2026.2.9-dreamclaw.14"
 fi
 
 if [[ -n "$OPENCLAW_SPEC" && ( -n "$OPENCLAW_REF" || -n "$OPENCLAW_BRANCH" ) ]]; then
@@ -321,10 +321,10 @@ saw_write_policy() {
 
   echo "==> SAW: writing conservative default policy"
   if [[ "$SAW_OS_NAME" == "macos" ]]; then
-    tee "$policy_file" > /dev/null << 'POLICY_EOF'
+    tee "$policy_file" > /dev/null << POLICY_EOF
 wallets:
-  main:
-    chain: evm
+  ${SAW_WALLET}:
+    chain: ${SAW_CHAIN}
     allowed_chains: [8453]
     max_tx_value_eth: 0.01
     allow_contract_calls: false
@@ -332,10 +332,10 @@ wallets:
     rate_limit_per_minute: 10
 POLICY_EOF
   else
-    sudo tee "$policy_file" > /dev/null << 'POLICY_EOF'
+    sudo tee "$policy_file" > /dev/null << POLICY_EOF
 wallets:
-  main:
-    chain: evm
+  ${SAW_WALLET}:
+    chain: ${SAW_CHAIN}
     allowed_chains: [8453]
     max_tx_value_eth: 0.01
     allow_contract_calls: false
@@ -354,17 +354,17 @@ POLICY_EOF
 saw_fix_permissions() {
   if [[ "$SAW_OS_NAME" == "macos" ]]; then
     # Current user owns everything; just tighten modes
-    chmod -R go-rwx "$SAW_ROOT/keys"
-    chmod 0640 "$SAW_ROOT/policy.yaml" 2>/dev/null || true
+    [[ -d "$SAW_ROOT/keys" ]] && chmod -R go-rwx "$SAW_ROOT/keys"
+    [[ -f "$SAW_ROOT/policy.yaml" ]] && chmod 0640 "$SAW_ROOT/policy.yaml"
     [[ -f "$SAW_ROOT/audit.log" ]] && chmod 0640 "$SAW_ROOT/audit.log"
   else
     sudo chown -R "$SAW_SERVICE_USER:$SAW_SERVICE_USER" "$SAW_ROOT"
-    sudo find "$SAW_ROOT/keys" -type d -exec chmod 0700 {} \;
-    sudo find "$SAW_ROOT/keys" -type f -exec chmod 0600 {} \;
-    sudo chmod 0640 "$SAW_ROOT/policy.yaml"
-    if [[ -f "$SAW_ROOT/audit.log" ]]; then
-      sudo chmod 0640 "$SAW_ROOT/audit.log"
+    if [[ -d "$SAW_ROOT/keys" ]]; then
+      sudo find "$SAW_ROOT/keys" -type d -exec chmod 0700 {} \;
+      sudo find "$SAW_ROOT/keys" -type f -exec chmod 0600 {} \;
     fi
+    [[ -f "$SAW_ROOT/policy.yaml" ]] && sudo chmod 0640 "$SAW_ROOT/policy.yaml"
+    [[ -f "$SAW_ROOT/audit.log" ]] && sudo chmod 0640 "$SAW_ROOT/audit.log"
   fi
   echo "==> SAW: permissions hardened"
 }
@@ -744,17 +744,16 @@ show_onboard_instructions() {
   echo "  Next step: run onboarding"
   echo "============================================"
   echo ""
-  echo "  $CLI_BIN_PATH onboard --auth-choice x402"
-  echo ""
   if [[ "$SAW_INSTALL" == "1" && -S "$SAW_SOCKET" ]]; then
-    echo "  SAW is running. When prompted for x402 auth:"
+    echo "  SAW_SOCKET=$SAW_SOCKET $CLI_BIN_PATH onboard --auth-choice x402"
     echo ""
+    echo "  SAW is running:"
     echo "    Socket path: $SAW_SOCKET"
     echo "    Wallet name: $SAW_WALLET"
     echo "    Sentinel:    saw:${SAW_WALLET}@${SAW_SOCKET}"
     echo ""
-    echo "  Choose 'Secure Agent Wallet (SAW)' when asked"
-    echo "  for the signing method."
+  else
+    echo "  $CLI_BIN_PATH onboard --auth-choice x402"
     echo ""
   fi
   echo "============================================"
