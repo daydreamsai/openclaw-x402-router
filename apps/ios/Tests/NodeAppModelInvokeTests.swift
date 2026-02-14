@@ -178,6 +178,38 @@ private func withUserDefaults<T>(_ updates: [String: Any?], _ body: () throws ->
         }
     }
 
+    @Test @MainActor func handleInvokeTalkPTTStartReturnsUnavailableWhenOffline() async {
+        let appModel = NodeAppModel()
+        let req = BridgeInvokeRequest(id: "talk-ptt", command: OpenClawTalkCommand.pttStart.rawValue)
+        let res = await appModel._test_handleInvoke(req)
+        #expect(res.ok == false)
+        #expect(res.error?.code == .unavailable)
+        #expect(res.error?.message.contains("Gateway not connected") == true)
+    }
+
+    @Test @MainActor func applyTalkModeSyncTogglesTalkState() {
+        let appModel = NodeAppModel()
+        let defaults = UserDefaults.standard
+        let key = "talk.enabled"
+        let previous = defaults.object(forKey: key)
+        defaults.set(false, forKey: key)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        appModel._test_applyTalkModeSync(enabled: true, phase: "enabled")
+        #expect(appModel.talkMode.isEnabled == true)
+        #expect(UserDefaults.standard.bool(forKey: "talk.enabled") == true)
+
+        appModel._test_applyTalkModeSync(enabled: false, phase: "disabled")
+        #expect(appModel.talkMode.isEnabled == false)
+        #expect(UserDefaults.standard.bool(forKey: "talk.enabled") == false)
+    }
+
     @Test @MainActor func canvasA2UIActionDispatchesStatus() async {
         let appModel = NodeAppModel()
         let body: [String: Any] = [

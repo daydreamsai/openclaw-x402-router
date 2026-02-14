@@ -340,6 +340,7 @@ final class NodeAppModel {
     }
 
     func setTalkEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: "talk.enabled")
         if enabled {
             // Voice wake holds the microphone continuously; talk mode needs exclusive access for STT.
             // When talk is enabled from the UI, prioritize talk and pause voice wake.
@@ -351,6 +352,11 @@ final class NodeAppModel {
             self.talkVoiceWakeSuspended = false
         }
         self.talkMode.setEnabled(enabled)
+        Task { [weak self] in
+            await self?.pushTalkModeToGateway(
+                enabled: enabled,
+                phase: enabled ? "enabled" : "disabled")
+        }
     }
 
     func requestLocationPermissions(mode: OpenClawLocationMode) async -> Bool {
@@ -479,14 +485,47 @@ final class NodeAppModel {
             let stream = await self.operatorGateway.subscribeServerEvents(bufferingNewest: 200)
             for await evt in stream {
                 if Task.isCancelled { return }
-                guard evt.event == "voicewake.changed" else { continue }
                 guard let payload = evt.payload else { continue }
-                struct Payload: Decodable { var triggers: [String] }
-                guard let decoded = try? GatewayPayloadDecoding.decode(payload, as: Payload.self) else { continue }
-                let triggers = VoiceWakePreferences.sanitizeTriggerWords(decoded.triggers)
-                VoiceWakePreferences.saveTriggerWords(triggers)
+                switch evt.event {
+                case "voicewake.changed":
+                    struct Payload: Decodable { var triggers: [String] }
+                    guard let decoded = try? GatewayPayloadDecoding.decode(payload, as: Payload.self) else { continue }
+                    let triggers = VoiceWakePreferences.sanitizeTriggerWords(decoded.triggers)
+                    VoiceWakePreferences.saveTriggerWords(triggers)
+                case "talk.mode":
+                    struct Payload: Decodable {
+                        var enabled: Bool
+                        var phase: String?
+                    }
+                    guard let decoded = try? GatewayPayloadDecoding.decode(payload, as: Payload.self) else { continue }
+                    self.applyTalkModeSync(enabled: decoded.enabled, phase: decoded.phase)
+                default:
+                    continue
+                }
             }
         }
+    }
+
+    private func applyTalkModeSync(enabled: Bool, phase: String?) {
+        _ = phase
+        guard self.talkMode.isEnabled != enabled else { return }
+        self.setTalkEnabled(enabled)
+    }
+
+    private func pushTalkModeToGateway(enabled: Bool, phase: String?) async {
+        guard await self.isOperatorConnected() else { return }
+        struct TalkModePayload: Encodable {
+            var enabled: Bool
+            var phase: String?
+        }
+        let payload = TalkModePayload(enabled: enabled, phase: phase)
+        guard let data = try? JSONEncoder().encode(payload),
+              let json = String(data: data, encoding: .utf8)
+        else { return }
+        _ = try? await self.operatorGateway.request(
+            method: "talk.mode",
+            paramsJSON: json,
+            timeoutSeconds: 8)
     }
 
     private func startGatewayHealthMonitor() {
@@ -1778,6 +1817,14 @@ private extension NodeAppModel {
     }
 }
 
+extension NodeAppModel {
+    func reloadTalkConfig() {
+        Task { [weak self] in
+            await self?.talkMode.reloadConfig()
+        }
+    }
+}
+
 #if DEBUG
 extension NodeAppModel {
     func _test_handleInvoke(_ req: BridgeInvokeRequest) async -> BridgeInvokeResponse {
@@ -1810,6 +1857,10 @@ extension NodeAppModel {
 
     func _test_showLocalCanvasOnDisconnect() {
         self.showLocalCanvasOnDisconnect()
+    }
+
+    func _test_applyTalkModeSync(enabled: Bool, phase: String? = nil) {
+        self.applyTalkModeSync(enabled: enabled, phase: phase)
     }
 }
 #endif

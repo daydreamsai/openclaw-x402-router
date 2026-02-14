@@ -406,3 +406,11 @@ export { loadWebMedia, type WebMediaResult } from "../web/media.js";
 
 // QR code utilities
 export { renderQrPngBase64 } from "../web/qr-image.js";
+export { encodePairingSetupCode, resolvePairingSetupFromConfig } from "../pairing/setup-code.js";
+export type {
+  PairingSetupCommandResult,
+  PairingSetupCommandRunner,
+  PairingSetupPayload,
+  PairingSetupResolution,
+  ResolvePairingSetupOptions,
+} from "../pairing/setup-code.js";
