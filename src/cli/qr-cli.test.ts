@@ -114,4 +114,51 @@ describe("registerQrCli", () => {
     const output = runtime.error.mock.calls.map((call) => String(call[0] ?? "")).join("\n");
     expect(output).toContain("only bound to loopback");
   });
+
+  it("uses gateway.remote.url when --remote is set (ignores device-pair publicUrl)", async () => {
+    loadConfig.mockReturnValue({
+      gateway: {
+        remote: { url: "wss://remote.example.com:444" },
+        auth: { mode: "token", token: "tok" },
+      },
+      plugins: {
+        entries: {
+          "device-pair": {
+            config: {
+              publicUrl: "ws://plugin.example.com:18789",
+            },
+          },
+        },
+      },
+    });
+
+    const program = new Command();
+    registerQrCli(program);
+
+    await program.parseAsync(["qr", "--setup-code-only", "--remote"], { from: "user" });
+
+    const expected = encodePairingSetupCode({
+      url: "wss://remote.example.com:444",
+      token: "tok",
+    });
+    expect(runtime.log).toHaveBeenCalledWith(expected);
+  });
+
+  it("errors when --remote is set but no remote URL is configured", async () => {
+    loadConfig.mockReturnValue({
+      gateway: {
+        bind: "custom",
+        customBindHost: "gateway.local",
+        auth: { mode: "token", token: "tok" },
+      },
+    });
+
+    const program = new Command();
+    registerQrCli(program);
+
+    await expect(program.parseAsync(["qr", "--remote"], { from: "user" })).rejects.toThrow("exit");
+
+    const output = runtime.error.mock.calls.map((call) => String(call[0] ?? "")).join("\n");
+    expect(output).toContain("qr --remote requires");
+  });
 });

@@ -10,6 +10,7 @@ type QrCliOptions = {
   json?: boolean;
   setupCodeOnly?: boolean;
   ascii?: boolean;
+  remote?: boolean;
   url?: string;
   publicUrl?: string;
   token?: string;
@@ -37,6 +38,11 @@ export function registerQrCli(program: Command) {
   program
     .command("qr")
     .description("Generate an iOS pairing QR code and setup code")
+    .option(
+      "--remote",
+      "Prefer gateway.remote.url (or tailscale serve/funnel) for the setup payload (ignores device-pair publicUrl)",
+      false,
+    )
     .option("--url <url>", "Override gateway URL used in the setup payload")
     .option("--public-url <url>", "Override gateway public URL used in the setup payload")
     .option("--token <token>", "Override gateway token for setup payload")
@@ -72,15 +78,31 @@ export function registerQrCli(program: Command) {
           cfg.gateway.auth.password = password;
         }
 
+        const wantsRemote = opts.remote === true;
+        if (wantsRemote && !opts.url && !opts.publicUrl) {
+          const tailscaleMode = cfg.gateway?.tailscale?.mode ?? "off";
+          const remoteUrl = cfg.gateway?.remote?.url;
+          const hasRemoteUrl = typeof remoteUrl === "string" && remoteUrl.trim().length > 0;
+          const hasTailscaleServe = tailscaleMode === "serve" || tailscaleMode === "funnel";
+          if (!hasRemoteUrl && !hasTailscaleServe) {
+            throw new Error(
+              "qr --remote requires gateway.remote.url (or gateway.tailscale.mode=serve/funnel).",
+            );
+          }
+        }
+
         const publicUrl =
           typeof opts.url === "string" && opts.url.trim()
             ? opts.url.trim()
             : typeof opts.publicUrl === "string" && opts.publicUrl.trim()
               ? opts.publicUrl.trim()
-              : readDevicePairPublicUrlFromConfig(cfg);
+              : wantsRemote
+                ? undefined
+                : readDevicePairPublicUrlFromConfig(cfg);
 
         const resolved = await resolvePairingSetupFromConfig(cfg, {
           publicUrl,
+          forceSecure: wantsRemote || undefined,
           runCommandWithTimeout: async (argv, runOpts) =>
             await runCommandWithTimeout(argv, {
               timeoutMs: runOpts.timeoutMs,
