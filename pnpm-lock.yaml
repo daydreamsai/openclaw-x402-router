@@ -264,6 +264,12 @@ importers:
         specifier: 0.1.2
         version: 0.1.2
 
+  extensions/daydreams-x402-auth:
+    dependencies:
+      '@daydreamsai/saw':
+        specifier: link:../../../agent-wallet/packages/saw
+        version: link:../../../agent-wallet/packages/saw
+
   extensions/diagnostics-otel:
     dependencies:
       '@opentelemetry/api':
@@ -448,6 +454,9 @@ importers:
       express:
         specifier: ^5.2.1
         version: 5.2.1
+      moltbot:
+        specifier: workspace:*
+        version: link:../..
       proper-lockfile:
         specifier: ^4.1.2
         version: 4.1.2

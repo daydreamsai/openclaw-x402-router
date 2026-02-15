@@ -7,6 +7,8 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 
 const log = createSubsystemLogger("agent/x402");
 
+const log = createSubsystemLogger("agent/x402");
+
 const X402_PROVIDER_ID = "x402";
 const X402_PLUGIN_ID = "daydreams-x402-auth";
 const DEFAULT_ROUTER_ORIGIN = "https://ai.xgate.run";
