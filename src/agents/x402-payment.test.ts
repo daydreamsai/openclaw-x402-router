@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import { __testing } from "./x402-payment.js";
 
 describe("x402 permit cache key", () => {
@@ -67,5 +66,46 @@ describe("parseSawConfig", () => {
   it("trims whitespace", () => {
     const result = __testing.parseSawConfig("  saw:main@/run/saw.sock  ");
     expect(result).toEqual({ walletName: "main", socketPath: "/run/saw.sock" });
+  });
+});
+
+describe("parseAwalConfig", () => {
+  it("parses a valid awal sentinel", () => {
+    const result = __testing.parseAwalConfig("awal:user@example.com");
+    expect(result).toEqual({ email: "user@example.com" });
+  });
+
+  it("parses an email with plus addressing", () => {
+    const result = __testing.parseAwalConfig("awal:user+agent@example.com");
+    expect(result).toEqual({ email: "user+agent@example.com" });
+  });
+
+  it("returns null for a SAW sentinel", () => {
+    expect(__testing.parseAwalConfig("saw:main@/run/saw.sock")).toBeNull();
+  });
+
+  it("returns null for a private key", () => {
+    expect(
+      __testing.parseAwalConfig(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null for undefined", () => {
+    expect(__testing.parseAwalConfig(undefined)).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(__testing.parseAwalConfig("")).toBeNull();
+  });
+
+  it("returns null for awal: without email", () => {
+    expect(__testing.parseAwalConfig("awal:")).toBeNull();
+  });
+
+  it("trims whitespace", () => {
+    const result = __testing.parseAwalConfig("  awal:user@example.com  ");
+    expect(result).toEqual({ email: "user@example.com" });
   });
 });

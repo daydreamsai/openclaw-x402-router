@@ -7,8 +7,6 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 
 const log = createSubsystemLogger("agent/x402");
 
-const log = createSubsystemLogger("agent/x402");
-
 const X402_PROVIDER_ID = "x402";
 const X402_PLUGIN_ID = "daydreams-x402-auth";
 const DEFAULT_ROUTER_ORIGIN = "https://ai.xgate.run";
@@ -21,6 +19,24 @@ const PRIVATE_KEY_REGEX = /^0x[0-9a-fA-F]{64}$/;
 
 // SAW sentinel: "saw:<wallet>@<socket-path>"
 const SAW_SENTINEL_REGEX = /^saw:([^@]+)@(.+)$/;
+
+// AWAL sentinel: "awal:<email>"
+const AWAL_SENTINEL_REGEX = /^awal:(.+@.+\..+)$/;
+
+interface AwalConfig {
+  email: string;
+}
+
+function parseAwalConfig(apiKey: string | undefined): AwalConfig | null {
+  if (!apiKey) {
+    return null;
+  }
+  const match = AWAL_SENTINEL_REGEX.exec(apiKey.trim());
+  if (!match) {
+    return null;
+  }
+  return { email: match[1] };
+}
 
 interface SawConfig {
   walletName: string;
@@ -45,7 +61,8 @@ interface SawClient {
 
 type SigningBackend =
   | { mode: "key"; wallet: ReturnType<typeof createWalletClient>; account: Account }
-  | { mode: "saw"; client: SawClient; ownerAddress: `0x${string}` };
+  | { mode: "saw"; client: SawClient; ownerAddress: `0x${string}` }
+  | { mode: "awal"; email: string };
 
 function parseSawConfig(apiKey: string | undefined): SawConfig | null {
   if (!apiKey) {
@@ -178,7 +195,7 @@ function normalizeRouterUrl(value?: string): string {
 
 function resolvePluginConfig(cfg?: OpenClawConfig): { permitCapUsd: number; network: string } {
   const raw = cfg?.plugins?.entries?.[X402_PLUGIN_ID]?.config;
-  const record = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const record = raw && typeof raw === "object" ? raw : {};
   const permitCapRaw = record.permitCap;
   const permitCapUsd =
     typeof permitCapRaw === "number" && Number.isFinite(permitCapRaw) && permitCapRaw > 0
@@ -344,7 +361,7 @@ async function signPermit(params: {
   const nonceValue = await fetchPermitNonce(
     chain,
     params.config.asset as `0x${string}`,
-    params.account.address as `0x${string}`,
+    params.account.address,
   );
 
   const domain = getPermitDomain(
@@ -731,4 +748,5 @@ export function maybeWrapStreamFnWithX402Payment(params: {
 export const __testing = {
   buildPermitCacheKey,
   parseSawConfig,
+  parseAwalConfig,
 };
