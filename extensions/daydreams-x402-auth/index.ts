@@ -331,6 +331,153 @@ const x402Plugin = {
             };
           },
         },
+        {
+          id: "awal",
+          label: "Coinbase Agentic Wallet (awal)",
+          hint: "Email-authenticated wallet via Coinbase — requires headless Electron in Docker",
+          kind: "api_key",
+          run: async (ctx) => {
+            await ctx.prompter.note(
+              [
+                "Coinbase Agentic Wallet authenticates via email OTP.",
+                "An Electron process runs headlessly to handle signing.",
+                "Requires the openclaw-sandbox-awal Docker image.",
+              ].join("\n"),
+              "awal",
+            );
+
+            const emailInput = await ctx.prompter.text({
+              message: "Email for awal authentication",
+              validate: (value) =>
+                value.trim().includes("@") ? undefined : "Valid email required",
+            });
+            const email = String(emailInput).trim();
+
+            const routerInput = await ctx.prompter.text({
+              message: "Daydreams Router URL",
+              initialValue: DEFAULT_ROUTER_URL,
+              validate: (value) => {
+                try {
+                  new URL(value);
+                  return undefined;
+                } catch {
+                  return "Invalid URL";
+                }
+              },
+            });
+            const routerUrl = normalizeRouterUrl(String(routerInput));
+
+            const capInput = await ctx.prompter.text({
+              message: "Permit cap (USD)",
+              initialValue: String(DEFAULT_PERMIT_CAP_USD),
+              validate: (value) => (normalizePermitCap(value) ? undefined : "Invalid amount"),
+            });
+            const permitCap = normalizePermitCap(String(capInput)) ?? DEFAULT_PERMIT_CAP_USD;
+
+            const networkInput = await ctx.prompter.text({
+              message: "Network (CAIP-2)",
+              initialValue: DEFAULT_NETWORK,
+              validate: (value) => (normalizeNetwork(value) ? undefined : "Required"),
+            });
+            const network = normalizeNetwork(String(networkInput)) ?? DEFAULT_NETWORK;
+
+            const existingPluginConfig =
+              ctx.config.plugins?.entries?.[PLUGIN_ID]?.config &&
+              typeof ctx.config.plugins.entries[PLUGIN_ID]?.config === "object"
+                ? (ctx.config.plugins.entries[PLUGIN_ID]?.config as Record<string, unknown>)
+                : {};
+
+            const pluginConfigPatch: Record<string, unknown> = {
+              ...existingPluginConfig,
+            };
+            if (existingPluginConfig.permitCap === undefined) {
+              pluginConfigPatch.permitCap = permitCap;
+            }
+            if (!existingPluginConfig.network) {
+              pluginConfigPatch.network = network;
+            }
+            pluginConfigPatch.awalEmail = email;
+
+            return {
+              profiles: [
+                {
+                  profileId: "x402:default",
+                  credential: {
+                    type: "api_key",
+                    provider: PROVIDER_ID,
+                    key: `awal:${email}`,
+                  },
+                },
+              ],
+              configPatch: {
+                plugins: {
+                  entries: {
+                    [PLUGIN_ID]: {
+                      config: pluginConfigPatch,
+                    },
+                  },
+                },
+                models: {
+                  providers: {
+                    [PROVIDER_ID]: {
+                      baseUrl: routerUrl,
+                      apiKey: "x402-wallet",
+                      api: "anthropic-messages",
+                      authHeader: false,
+                      models: [
+                        {
+                          id: DEFAULT_MODEL_ID,
+                          name: "Moonshot Kimi K2.5",
+                          api: "openai-completions",
+                          reasoning: false,
+                          input: ["text", "image"],
+                          cost: {
+                            input: 0,
+                            output: 0,
+                            cacheRead: 0,
+                            cacheWrite: 0,
+                          },
+                          contextWindow: 262144,
+                          maxTokens: 8192,
+                        },
+                        {
+                          id: ANTHROPIC_MODEL_ID,
+                          name: "Anthropic Opus 4.5",
+                          reasoning: false,
+                          input: ["text", "image"],
+                          cost: {
+                            input: 0,
+                            output: 0,
+                            cacheRead: 0,
+                            cacheWrite: 0,
+                          },
+                          contextWindow: 200000,
+                          maxTokens: 8192,
+                        },
+                      ],
+                    },
+                  },
+                },
+                agents: {
+                  defaults: {
+                    models: {
+                      [DEFAULT_AUTO_REF]: {},
+                      [DEFAULT_MODEL_REF]: { alias: "Kimi" },
+                      [ANTHROPIC_MODEL_REF]: { alias: "Opus" },
+                    },
+                  },
+                },
+              },
+              defaultModel: DEFAULT_AUTO_REF,
+              notes: [
+                `Awal wallet configured for ${email}.`,
+                `Daydreams Router base URL set to ${routerUrl}.`,
+                'Run "npx awal auth login" inside the sandbox to authenticate.',
+                "Ensure the openclaw-sandbox-awal Docker image is running.",
+              ],
+            };
+          },
+        },
       ],
     });
   },

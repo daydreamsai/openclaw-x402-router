@@ -1,6 +1,7 @@
 {
   "id": "daydreams-x402-auth",
   "providers": ["x402"],
+  "skills": ["./skills"],
   "uiHints": {
     "permitCap": {
       "label": "Permit Cap (USD)",
@@ -9,6 +10,11 @@
     "network": {
       "label": "Network (CAIP-2)",
       "help": "Examples: eip155:8453 (Base), eip155:1 (Ethereum)",
+      "advanced": true
+    },
+    "awalEmail": {
+      "label": "Awal Email",
+      "help": "Email used for Coinbase Agentic Wallet OTP authentication",
       "advanced": true
     }
   },
@@ -21,6 +27,9 @@
         "minimum": 0.01
       },
       "network": {
+        "type": "string"
+      },
+      "awalEmail": {
         "type": "string"
       }
     }
