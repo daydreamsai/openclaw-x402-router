@@ -48,6 +48,26 @@ Required on first use or after Electron data is wiped.
 
 All commands accept `--json` for machine-readable output.
 
+## Local Testing
+
+Build and run the container interactively from the repo root (on your host machine):
+
+```bash
+docker build -f Dockerfile.sandbox-awal -t openclaw-sandbox-awal:local .
+docker run -it --rm openclaw-sandbox-awal:local bash
+```
+
+Inside the container you land as the `sandbox` user (not root). Since `bash` bypasses
+the default entrypoint, start xvfb manually before using awal:
+
+```bash
+Xvfb :1 -screen 0 1280x800x24 -ac -nolisten tcp &
+export DISPLAY=:1
+```
+
+Then run through the authentication and wallet commands above. Do not use root —
+Electron expects a non-root user and config files live under `/home/sandbox`.
+
 ## Troubleshooting
 
 - **Daemon not running**: Check `/tmp/awal-electron.log`. Remove `/tmp/payments-mcp-ui.lock` if stale.
