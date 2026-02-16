@@ -4,6 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { base, baseSepolia, mainnet } from "viem/chains";
 import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { runCommandWithTimeout } from "../process/exec.js";
 
 const log = createSubsystemLogger("agent/x402");
 
@@ -76,7 +77,14 @@ function parseSawConfig(apiKey: string | undefined): SawConfig | null {
 }
 
 function getOwnerAddress(backend: SigningBackend): `0x${string}` {
-  return backend.mode === "key" ? backend.account.address : backend.ownerAddress;
+  if (backend.mode === "key") {
+    return backend.account.address;
+  }
+  if (backend.mode === "saw") {
+    return backend.ownerAddress;
+  }
+  // awal mode — address resolved during signing
+  return "0x0000000000000000000000000000000000000000";
 }
 
 const USDC_ADDRESSES: Record<string, `0x${string}`> = {
@@ -437,27 +445,110 @@ async function signPermitViaSaw(params: {
   };
 }
 
+async function signPermitViaAwal(params: {
+  config: RouterConfig;
+  permitCap: string;
+}): Promise<{ signature: string; nonce: string; deadline: string; ownerAddress: string }> {
+  const addressResult = await runCommandWithTimeout(["npx", "awal", "address", "--json"], {
+    timeoutMs: 10_000,
+    env: { DISPLAY: ":1" },
+  });
+  if (addressResult.code !== 0) {
+    throw new Error(`awal address failed: ${addressResult.stderr}`);
+  }
+  const { address } = JSON.parse(addressResult.stdout.trim()) as { address: string };
+
+  const chain = CHAINS[params.config.network] || base;
+  const chainId = Number.parseInt(params.config.network.split(":")[1] ?? "0", 10);
+  const deadline = Math.floor(Date.now() / 1000) + DEFAULT_VALIDITY_SECONDS;
+  const nonceValue = await fetchPermitNonce(
+    chain,
+    params.config.asset as `0x${string}`,
+    address as `0x${string}`,
+  );
+
+  log.info("signing permit via awal", {
+    owner: address,
+    spender: params.config.facilitatorSigner,
+    network: params.config.network,
+    nonce: nonceValue.toString(),
+  });
+
+  const signResult = await runCommandWithTimeout(
+    [
+      "npx",
+      "awal",
+      "x402",
+      "sign-permit",
+      "--chain-id",
+      chainId.toString(),
+      "--token",
+      params.config.asset,
+      "--name",
+      params.config.tokenName,
+      "--version",
+      params.config.tokenVersion,
+      "--spender",
+      params.config.facilitatorSigner,
+      "--value",
+      params.permitCap,
+      "--nonce",
+      nonceValue.toString(),
+      "--deadline",
+      deadline.toString(),
+      "--owner",
+      address,
+      "--json",
+    ],
+    { timeoutMs: 30_000, env: { DISPLAY: ":1" } },
+  );
+  if (signResult.code !== 0) {
+    throw new Error(`awal sign-permit failed: ${signResult.stderr}`);
+  }
+  const { signature } = JSON.parse(signResult.stdout.trim()) as { signature: string };
+
+  log.info("awal permit signed", { address, sigPrefix: signature.slice(0, 14) });
+
+  return {
+    signature,
+    nonce: nonceValue.toString(),
+    deadline: deadline.toString(),
+    ownerAddress: address,
+  };
+}
+
 async function createCachedPermit(params: {
   backend: SigningBackend;
   config: RouterConfig;
   permitCap: string;
 }): Promise<CachedPermit> {
-  const { signature, nonce, deadline } =
-    params.backend.mode === "key"
-      ? await signPermit({
-          wallet: params.backend.wallet,
-          account: params.backend.account,
+  const signResult =
+    params.backend.mode === "awal"
+      ? await signPermitViaAwal({
           config: params.config,
           permitCap: params.permitCap,
         })
-      : await signPermitViaSaw({
-          client: params.backend.client,
-          ownerAddress: params.backend.ownerAddress,
-          config: params.config,
-          permitCap: params.permitCap,
-        });
+      : params.backend.mode === "key"
+        ? await signPermit({
+            wallet: params.backend.wallet,
+            account: params.backend.account,
+            config: params.config,
+            permitCap: params.permitCap,
+          })
+        : await signPermitViaSaw({
+            client: params.backend.client,
+            ownerAddress: params.backend.ownerAddress,
+            config: params.config,
+            permitCap: params.permitCap,
+          });
 
-  const owner = getOwnerAddress(params.backend);
+  const { signature, nonce, deadline } = signResult;
+
+  // For awal mode, use the returned ownerAddress
+  const owner =
+    params.backend.mode === "awal"
+      ? ((signResult as { ownerAddress: string }).ownerAddress as `0x${string}`)
+      : getOwnerAddress(params.backend);
   const payload = {
     x402Version: 2,
     accepted: {
@@ -580,10 +671,11 @@ export function maybeWrapStreamFnWithX402Payment(params: {
     return params.streamFn;
   }
 
-  // Detect signing mode: SAW sentinel first, then raw private key
-  const sawConfig = parseSawConfig(params.apiKey);
-  const privateKey = sawConfig ? null : normalizePrivateKey(params.apiKey);
-  if (!sawConfig && !privateKey) {
+  // Detect signing mode: awal sentinel → SAW sentinel → raw private key
+  const awalConfig = parseAwalConfig(params.apiKey);
+  const sawConfig = awalConfig ? null : parseSawConfig(params.apiKey);
+  const privateKey = sawConfig ? null : awalConfig ? null : normalizePrivateKey(params.apiKey);
+  if (!awalConfig && !sawConfig && !privateKey) {
     return params.streamFn;
   }
 
@@ -601,9 +693,15 @@ export function maybeWrapStreamFnWithX402Payment(params: {
     }
   })();
 
-  // Build signing backend — SAW resolves the address lazily via the daemon
+  // Build signing backend — awal/SAW resolve the address lazily via their daemons
   let backendPromise: Promise<SigningBackend>;
-  if (sawConfig) {
+  if (awalConfig) {
+    log.info("x402 using awal backend", { email: awalConfig.email });
+    backendPromise = Promise.resolve({
+      mode: "awal",
+      email: awalConfig.email,
+    } satisfies SigningBackend);
+  } else if (sawConfig) {
     log.info("x402 using SAW backend", {
       wallet: sawConfig.walletName,
       socket: sawConfig.socketPath,
