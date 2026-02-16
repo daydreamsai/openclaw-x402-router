@@ -1,6 +1,4 @@
 import type { StreamFn } from "@mariozechner/pi-agent-core";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import { createPublicClient, createWalletClient, http, type Account, type Chain } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base, baseSepolia, mainnet } from "viem/chains";
@@ -195,126 +193,76 @@ const ROUTER_CONFIG_CACHE = new Map<string, RouterConfig>();
 const PERMIT_CACHE = new Map<string, CachedPermit>();
 
 // ---------------------------------------------------------------------------
-// awal ephemeral key: fund a local key from the awal wallet, then sign locally
+// awal + SAW: awal funds the SAW wallet, SAW handles signing
 // ---------------------------------------------------------------------------
 
-const AWAL_KEY_FILE = join(process.env.HOME || "/home/node", ".openclaw", ".awal-ephemeral-key");
-
 // Minimum USDC balance (atomic units, 6 decimals) before we top up.
-// 2 USDC should cover several requests.
 const AWAL_MIN_BALANCE = 2_000_000n;
-// Amount to send from awal when topping up (matches awal per-request limit).
+// Amount to send from awal when topping up.
 const AWAL_TOPUP_AMOUNT = "2.5";
 
-let awalEphemeralPromise: Promise<{
-  account: ReturnType<typeof privateKeyToAccount>;
-  wallet: ReturnType<typeof createWalletClient>;
-  balanceUnits: string;
-}> | null = null;
+const ERC20_BALANCE_ABI = [
+  {
+    name: "balanceOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+let awalFundSawPromise: Promise<void> | null = null;
 
 /**
- * Resolve (or create + fund) an ephemeral private key backed by the awal
- * wallet.  The key is persisted to disk so it survives gateway restarts
- * within the same container.
+ * Ensure the SAW wallet has enough USDC by topping up from awal if needed.
+ * Called lazily on first request. The SAW daemon and awal Electron are
+ * started by the entrypoint script; this only handles the funding step.
  */
-async function resolveAwalEphemeralKey(
+async function ensureSawFundedFromAwal(
+  sawAddress: `0x${string}`,
   chain: Chain,
-  _permitCap: string,
-  _network: string,
-): Promise<{
-  account: ReturnType<typeof privateKeyToAccount>;
-  wallet: ReturnType<typeof createWalletClient>;
-  balanceUnits: string;
-}> {
-  // Singleton — only resolve once per process
-  if (awalEphemeralPromise) {
-    return awalEphemeralPromise;
+  network: string,
+): Promise<void> {
+  if (awalFundSawPromise) {
+    return awalFundSawPromise;
   }
-  awalEphemeralPromise = (async () => {
-    // 1. Load or generate ephemeral key
-    let keyHex: `0x${string}`;
-    try {
-      const stored = await readFile(AWAL_KEY_FILE, "utf-8");
-      keyHex = stored.trim() as `0x${string}`;
-      if (!PRIVATE_KEY_REGEX.test(keyHex)) {
-        throw new Error("bad key");
-      }
-    } catch {
-      // Generate fresh key
-      const { generatePrivateKey } = await import("viem/accounts");
-      keyHex = generatePrivateKey();
-      await mkdir(join(AWAL_KEY_FILE, ".."), { recursive: true });
-      await writeFile(AWAL_KEY_FILE, keyHex, { mode: 0o600 });
-      log.info("awal ephemeral key generated");
-    }
-
-    const account = privateKeyToAccount(keyHex);
-    log.info("awal ephemeral key loaded", { address: account.address });
-
-    // 2. Check USDC balance on the ephemeral key
-    const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+  awalFundSawPromise = (async () => {
+    const usdcAddress = USDC_ADDRESSES[network] || USDC_ADDRESSES[DEFAULT_NETWORK];
     const publicClient = getPublicClient(chain);
     const balance = await publicClient.readContract({
-      address: USDC_ADDRESS,
-      abi: [
-        {
-          name: "balanceOf",
-          type: "function",
-          stateMutability: "view",
-          inputs: [{ name: "account", type: "address" }],
-          outputs: [{ name: "", type: "uint256" }],
-        },
-      ],
+      address: usdcAddress,
+      abi: ERC20_BALANCE_ABI,
       functionName: "balanceOf",
-      args: [account.address],
+      args: [sawAddress],
     });
 
-    log.info("awal ephemeral key USDC balance", {
-      address: account.address,
+    log.info("SAW wallet USDC balance", {
+      address: sawAddress,
       balance: String(balance),
     });
 
-    // 3. Top up from awal if needed
-    let finalBalance = balance;
-    if (finalBalance < AWAL_MIN_BALANCE) {
-      log.info("awal ephemeral key underfunded, topping up via awal send", {
-        amount: AWAL_TOPUP_AMOUNT,
-        to: account.address,
-      });
-      const result = await runCommandWithTimeout(
-        ["npx", "awal", "send", AWAL_TOPUP_AMOUNT, account.address, "--json"],
-        { timeoutMs: 60_000, env: { ...process.env, DISPLAY: ":1" } },
-      );
-      if (result.code !== 0) {
-        throw new Error(`awal send failed (exit ${result.code}): ${result.stderr}`);
-      }
-      log.info("awal send complete", { stdout: result.stdout.trim() });
-      // Re-check balance after top-up
-      const newBalance = await publicClient.readContract({
-        address: USDC_ADDRESS,
-        abi: [
-          {
-            name: "balanceOf",
-            type: "function",
-            stateMutability: "view",
-            inputs: [{ name: "account", type: "address" }],
-            outputs: [{ name: "", type: "uint256" }],
-          },
-        ],
-        functionName: "balanceOf",
-        args: [account.address],
-      });
-      finalBalance = newBalance;
+    if (balance >= AWAL_MIN_BALANCE) {
+      log.info("SAW wallet sufficiently funded, skipping awal top-up");
+      return;
     }
 
-    const wallet = createWalletClient({ account, chain, transport: http() });
-    return { account, wallet, balanceUnits: finalBalance.toString() };
+    log.info("SAW wallet underfunded, topping up via awal send", {
+      amount: AWAL_TOPUP_AMOUNT,
+      to: sawAddress,
+    });
+    const result = await runCommandWithTimeout(
+      ["npx", "awal", "send", AWAL_TOPUP_AMOUNT, sawAddress, "--json"],
+      { timeoutMs: 60_000, env: { ...process.env, DISPLAY: ":1" } },
+    );
+    if (result.code !== 0) {
+      throw new Error(`awal send failed (exit ${result.code}): ${result.stderr}`);
+    }
+    log.info("awal send to SAW complete", { stdout: result.stdout.trim() });
   })().catch((err) => {
-    // Reset so the next request retries (e.g. after awal auth is fixed)
-    awalEphemeralPromise = null;
+    awalFundSawPromise = null;
     throw err;
   });
-  return awalEphemeralPromise;
+  return awalFundSawPromise;
 }
 
 function normalizePrivateKey(value: string | undefined): string | null {
@@ -747,31 +695,34 @@ export function maybeWrapStreamFnWithX402Payment(params: {
 
   // Build signing backend — awal/SAW resolve the address lazily via their daemons
   let backendPromise: Promise<SigningBackend>;
-  // For awal ephemeral keys, cap the permit to the wallet balance
-  let effectivePermitCap = permitCap;
+  const effectivePermitCap = permitCap;
   if (awalConfig) {
-    // awal mode: the Coinbase hosted wallet can't directly sign "upto" permits
-    // for the xgate router.  Instead, generate an ephemeral local key and fund it
-    // from the awal wallet via `npx awal send`.  Then use the normal key backend.
-    log.info("x402 using awal backend (ephemeral key)", { email: awalConfig.email });
-    const chain = CHAINS[network] || base;
-    backendPromise = resolveAwalEphemeralKey(chain, permitCap, network).then(
-      ({ account: acct, wallet: w, balanceUnits }) => {
-        // Cap permit to actual wallet balance — xgate rejects permits exceeding balance
-        if (BigInt(balanceUnits) < BigInt(permitCap)) {
-          effectivePermitCap = balanceUnits;
-          log.info("x402 permit cap capped to wallet balance", {
-            permitCap,
-            effectivePermitCap: balanceUnits,
-          });
-        }
-        return {
-          mode: "key" as const,
-          wallet: w,
-          account: acct,
-        };
-      },
-    );
+    // awal mode: awal funds the SAW wallet, SAW handles signing.
+    // The SAW daemon is started by the entrypoint script; we just need
+    // to connect to it and fund it from awal on the first request.
+    const sawSocket = process.env.SAW_SOCKET || "/home/node/.saw/saw.sock";
+    const sawWallet = process.env.SAW_WALLET || "main";
+    log.info("x402 using awal+SAW backend", {
+      email: awalConfig.email,
+      sawSocket,
+      sawWallet,
+    });
+    const sawModuleId = "@daydreamsai/saw";
+    backendPromise = (
+      import(/* webpackIgnore: true */ sawModuleId) as Promise<{
+        createSawClient: (opts: { socketPath: string; wallet: string }) => SawClient;
+      }>
+    ).then(async ({ createSawClient: createClient }) => {
+      const client = createClient({ socketPath: sawSocket, wallet: sawWallet });
+      const addr = (await client.getAddress()) as `0x${string}`;
+      log.info("awal+SAW address resolved", { address: addr });
+
+      // Fund SAW wallet from awal if needed
+      const chain = CHAINS[network] || base;
+      await ensureSawFundedFromAwal(addr, chain, network);
+
+      return { mode: "saw", client, ownerAddress: addr } satisfies SigningBackend;
+    });
   } else if (sawConfig) {
     log.info("x402 using SAW backend", {
       wallet: sawConfig.walletName,
@@ -820,7 +771,7 @@ export function maybeWrapStreamFnWithX402Payment(params: {
       if (input && typeof (input as { url?: string }).url === "string") {
         return (input as { url: string }).url;
       }
-      return String(input);
+      return String(input as string);
     })();
     let parsed: URL | null = null;
     try {
