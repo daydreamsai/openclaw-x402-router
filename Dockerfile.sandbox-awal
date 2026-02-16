@@ -36,4 +36,16 @@ RUN useradd --create-home --shell /bin/bash sandbox
 USER sandbox
 WORKDIR /home/sandbox
 
+# Pre-install awal server bundle at build time so container starts fast
+ENV AWAL_DIR=/home/sandbox/.local/share/awal/server
+RUN npx awal@latest --version > /dev/null 2>&1 || true \
+  && NPX_CACHE=$(find /home/sandbox/.npm/_npx -path '*/awal/server-bundle' -type d 2>/dev/null | head -1) \
+  && if [ -z "${NPX_CACHE}" ]; then echo "ERROR: could not locate awal server-bundle" >&2; exit 1; fi \
+  && mkdir -p "${AWAL_DIR}" \
+  && cp -r "${NPX_CACHE}/"* "${AWAL_DIR}/" \
+  && cd "${AWAL_DIR}" && npm install --omit=dev \
+  && AWAL_VERSION=$(npx awal@latest --version 2>/dev/null || echo "unknown") \
+  && echo "${AWAL_VERSION}" > "${AWAL_DIR}/.version" \
+  && echo "awal ${AWAL_VERSION} pre-installed"
+
 CMD ["openclaw-sandbox-awal"]
