@@ -134,8 +134,9 @@ It lets you pay for inference with USDC.
 
 - Provider: `x402`
 - Auth: wallet private key (stored in auth profiles)
-- Example model: `x402/anthropic:claude-opus-4-5`
+- Example models: `x402/claude-opus-4-6`, `x402/gpt-5`, `x402/gpt-5.3-codex`
 - CLI: `clawdbot onboard --auth-choice x402`
+- Catalog: `https://ai.xgate.run/v1/models`
 
 ```json5
 {
@@ -146,15 +147,19 @@ It lets you pay for inference with USDC.
         baseUrl: "https://ai.xgate.run/v1",
         api: "anthropic-messages",
         authHeader: false,
-        models: [{ id: "anthropic:claude-opus-4-5", name: "Claude Opus 4.5" }]
-      }
-    }
+        models: [
+          { id: "claude-opus-4-6", name: "Claude Opus 4.6", api: "anthropic-messages" },
+          { id: "kimi-k2.5", name: "Kimi K2.5", api: "openai-completions" },
+          { id: "gpt-5.3-codex", name: "GPT-5.3 Codex", api: "openai-responses" },
+        ],
+      },
+    },
   },
   plugins: {
     entries: {
-      "daydreams-x402-auth": { config: { permitCap: 10, network: "eip155:8453" } }
-    }
-  }
+      "daydreams-x402-auth": { config: { permitCap: 10, network: "eip155:8453" } },
+    },
+  },
 }
 ```
 

@@ -12,15 +12,232 @@ const PLUGIN_ID = "daydreams-x402-auth";
 const DEFAULT_ROUTER_URL = "https://ai.xgate.run";
 const DEFAULT_NETWORK = "eip155:8453";
 const DEFAULT_PERMIT_CAP_USD = 10;
-const DEFAULT_MODEL_ID = "moonshot:kimi-k2.5";
+const DEFAULT_MODEL_ID = "kimi-k2.5";
 const DEFAULT_MODEL_REF = `x402/${DEFAULT_MODEL_ID}`;
-const ANTHROPIC_MODEL_ID = "anthropic:claude-opus-4-5";
-const ANTHROPIC_MODEL_REF = `x402/${ANTHROPIC_MODEL_ID}`;
+const OPUS_MODEL_ID = "claude-opus-4-6";
+const OPUS_MODEL_REF = `x402/${OPUS_MODEL_ID}`;
+const GPT5_MODEL_ID = "gpt-5";
+const GPT5_MODEL_REF = `x402/${GPT5_MODEL_ID}`;
+const CODEX_MODEL_ID = "gpt-5.3-codex";
+const CODEX_MODEL_REF = `x402/${CODEX_MODEL_ID}`;
 const DEFAULT_AUTO_REF = "x402/auto";
+const FALLBACK_CONTEXT_WINDOW = 128000;
+const FALLBACK_MAX_TOKENS = 8192;
 
 const PRIVATE_KEY_REGEX = /^0x[0-9a-fA-F]{64}$/;
 const DEFAULT_SAW_SOCKET = process.env.SAW_SOCKET || "/run/saw/saw.sock";
 const DEFAULT_SAW_WALLET = "main";
+const X402_MODELS = [
+  {
+    id: "claude-opus-4-5",
+    name: "Claude Opus 4.5 (latest)",
+    api: "anthropic-messages",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+    contextWindow: 200000,
+    maxTokens: 64000,
+  },
+  {
+    id: OPUS_MODEL_ID,
+    name: "Claude Opus 4.6 (latest)",
+    api: "anthropic-messages",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+    contextWindow: 200000,
+    maxTokens: 64000,
+  },
+  // xgate does not publish token limits for media generation models.
+  {
+    id: "fal-ai/flux-2-flex",
+    name: "Flux 2 Flex",
+    api: "openai-completions",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 0.05, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: FALLBACK_CONTEXT_WINDOW,
+    maxTokens: FALLBACK_MAX_TOKENS,
+  },
+  {
+    id: "fal-ai/flux-2-flex/edit",
+    name: "Flux 2 Flex (Edit)",
+    api: "openai-completions",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 0.05, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: FALLBACK_CONTEXT_WINDOW,
+    maxTokens: FALLBACK_MAX_TOKENS,
+  },
+  {
+    id: "fal-ai/flux-2-pro",
+    name: "Flux 2 Pro",
+    api: "openai-completions",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 0.03, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: FALLBACK_CONTEXT_WINDOW,
+    maxTokens: FALLBACK_MAX_TOKENS,
+  },
+  {
+    id: "fal-ai/kling-video/o3/standard/reference-to-video",
+    name: "Kling O3 Reference to Video (Standard)",
+    api: "openai-completions",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 0.28, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: FALLBACK_CONTEXT_WINDOW,
+    maxTokens: FALLBACK_MAX_TOKENS,
+  },
+  {
+    id: DEFAULT_MODEL_ID,
+    name: "Kimi K2.5",
+    api: "openai-completions",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 0.6, output: 3, cacheRead: 0.1, cacheWrite: 0 },
+    contextWindow: 262144,
+    maxTokens: 8192,
+  },
+  {
+    id: GPT5_MODEL_ID,
+    name: "GPT-5",
+    api: "openai-responses",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+    contextWindow: 400000,
+    maxTokens: 128000,
+  },
+  {
+    id: "gpt-5-mini",
+    name: "GPT-5 Mini",
+    api: "openai-responses",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 },
+    contextWindow: 400000,
+    maxTokens: 128000,
+  },
+  {
+    id: "gpt-5-nano",
+    name: "GPT-5 Nano",
+    api: "openai-responses",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { input: 0.05, output: 0.4, cacheRead: 0.005, cacheWrite: 0 },
+    contextWindow: 400000,
+    maxTokens: 128000,
+  },
+  {
+    id: "gpt-5-pro",
+    name: "GPT-5 Pro",
+    api: "openai-responses",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { input: 15, output: 120, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 400000,
+    maxTokens: 272000,
+  },
+  {
+    id: "gpt-5.2-codex",
+    name: "GPT-5.2 Codex",
+    api: "openai-responses",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },
+    contextWindow: 400000,
+    maxTokens: 128000,
+  },
+  {
+    id: CODEX_MODEL_ID,
+    name: "GPT-5.3 Codex",
+    api: "openai-responses",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },
+    contextWindow: 400000,
+    maxTokens: 128000,
+  },
+  {
+    id: "anthropic/claude-3.5-haiku",
+    name: "Claude Haiku 3.5",
+    api: "openai-completions",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 },
+    contextWindow: 200000,
+    maxTokens: 8192,
+  },
+  {
+    id: "anthropic/claude-3.7-sonnet",
+    name: "Claude Sonnet 3.7",
+    api: "openai-completions",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+    contextWindow: 200000,
+    maxTokens: 128000,
+  },
+  {
+    id: "anthropic/claude-haiku-4.5",
+    name: "Claude Haiku 4.5",
+    api: "openai-completions",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+    contextWindow: 200000,
+    maxTokens: 64000,
+  },
+  {
+    id: "anthropic/claude-opus-4",
+    name: "Claude Opus 4",
+    api: "openai-completions",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+    contextWindow: 200000,
+    maxTokens: 32000,
+  },
+  {
+    id: "anthropic/claude-opus-4.1",
+    name: "Claude Opus 4.1",
+    api: "openai-completions",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+    contextWindow: 200000,
+    maxTokens: 32000,
+  },
+  {
+    id: "anthropic/claude-opus-4.5",
+    name: "Claude Opus 4.5",
+    api: "openai-completions",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+    contextWindow: 200000,
+    maxTokens: 32000,
+  },
+  {
+    id: "anthropic/claude-sonnet-4",
+    name: "Claude Sonnet 4",
+    api: "openai-completions",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+    contextWindow: 200000,
+    maxTokens: 64000,
+  },
+];
+
+function cloneX402Models() {
+  return X402_MODELS.map((model) => ({
+    ...model,
+    input: [...model.input],
+    cost: { ...model.cost },
+  }));
+}
 
 function normalizePrivateKey(value: string): string | null {
   const trimmed = value.trim();
@@ -161,27 +378,7 @@ const x402Plugin = {
                       apiKey: "x402-wallet",
                       api: "anthropic-messages",
                       authHeader: false,
-                      models: [
-                        {
-                          id: DEFAULT_MODEL_ID,
-                          name: "Moonshot Kimi K2.5",
-                          api: "openai-completions",
-                          reasoning: false,
-                          input: ["text", "image"],
-                          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-                          contextWindow: 262144,
-                          maxTokens: 8192,
-                        },
-                        {
-                          id: ANTHROPIC_MODEL_ID,
-                          name: "Anthropic Opus 4.5",
-                          reasoning: false,
-                          input: ["text", "image"],
-                          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-                          contextWindow: 200000,
-                          maxTokens: 8192,
-                        },
-                      ],
+                      models: cloneX402Models(),
                     },
                   },
                 },
@@ -190,7 +387,9 @@ const x402Plugin = {
                     models: {
                       [DEFAULT_AUTO_REF]: {},
                       [DEFAULT_MODEL_REF]: { alias: "Kimi" },
-                      [ANTHROPIC_MODEL_REF]: { alias: "Opus" },
+                      [OPUS_MODEL_REF]: { alias: "Opus" },
+                      [GPT5_MODEL_REF]: { alias: "GPT-5" },
+                      [CODEX_MODEL_REF]: { alias: "Codex" },
                     },
                   },
                 },
@@ -296,27 +495,7 @@ const x402Plugin = {
                       apiKey: "x402-wallet",
                       api: "anthropic-messages",
                       authHeader: false,
-                      models: [
-                        {
-                          id: DEFAULT_MODEL_ID,
-                          name: "Moonshot Kimi K2.5",
-                          api: "openai-completions",
-                          reasoning: false,
-                          input: ["text", "image"],
-                          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-                          contextWindow: 262144,
-                          maxTokens: 8192,
-                        },
-                        {
-                          id: ANTHROPIC_MODEL_ID,
-                          name: "Anthropic Opus 4.5",
-                          reasoning: false,
-                          input: ["text", "image"],
-                          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-                          contextWindow: 200000,
-                          maxTokens: 8192,
-                        },
-                      ],
+                      models: cloneX402Models(),
                     },
                   },
                 },
@@ -325,7 +504,9 @@ const x402Plugin = {
                     models: {
                       [DEFAULT_AUTO_REF]: {},
                       [DEFAULT_MODEL_REF]: { alias: "Kimi" },
-                      [ANTHROPIC_MODEL_REF]: { alias: "Opus" },
+                      [OPUS_MODEL_REF]: { alias: "Opus" },
+                      [GPT5_MODEL_REF]: { alias: "GPT-5" },
+                      [CODEX_MODEL_REF]: { alias: "Codex" },
                     },
                   },
                 },
