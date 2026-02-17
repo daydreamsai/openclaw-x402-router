@@ -12,6 +12,7 @@ const PLUGIN_ID = "daydreams-x402-auth";
 const DEFAULT_ROUTER_URL = "https://ai.xgate.run";
 const DEFAULT_NETWORK = "eip155:8453";
 const DEFAULT_PERMIT_CAP_USD = 10;
+const AUTO_MODEL_ID = "auto";
 const DEFAULT_MODEL_ID = "kimi-k2.5";
 const DEFAULT_MODEL_REF = `x402/${DEFAULT_MODEL_ID}`;
 const OPUS_MODEL_ID = "claude-opus-4-6";
@@ -20,7 +21,7 @@ const GPT5_MODEL_ID = "gpt-5";
 const GPT5_MODEL_REF = `x402/${GPT5_MODEL_ID}`;
 const CODEX_MODEL_ID = "gpt-5.3-codex";
 const CODEX_MODEL_REF = `x402/${CODEX_MODEL_ID}`;
-const DEFAULT_AUTO_REF = "x402/auto";
+const DEFAULT_AUTO_REF = `x402/${AUTO_MODEL_ID}`;
 const FALLBACK_CONTEXT_WINDOW = 128000;
 const FALLBACK_MAX_TOKENS = 8192;
 
@@ -28,6 +29,17 @@ const PRIVATE_KEY_REGEX = /^0x[0-9a-fA-F]{64}$/;
 const DEFAULT_SAW_SOCKET = process.env.SAW_SOCKET || "/run/saw/saw.sock";
 const DEFAULT_SAW_WALLET = "main";
 const X402_MODELS = [
+  {
+    id: AUTO_MODEL_ID,
+    name: "Auto (Smart Routing)",
+    api: "openai-completions",
+    reasoning: true,
+    input: ["text", "image"],
+    // Router selects the final provider/model at request time.
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: FALLBACK_CONTEXT_WINDOW,
+    maxTokens: FALLBACK_MAX_TOKENS,
+  },
   {
     id: "claude-opus-4-5",
     name: "Claude Opus 4.5 (latest)",
@@ -385,7 +397,7 @@ const x402Plugin = {
                 agents: {
                   defaults: {
                     models: {
-                      [DEFAULT_AUTO_REF]: {},
+                      [DEFAULT_AUTO_REF]: { alias: "Auto" },
                       [DEFAULT_MODEL_REF]: { alias: "Kimi" },
                       [OPUS_MODEL_REF]: { alias: "Opus" },
                       [GPT5_MODEL_REF]: { alias: "GPT-5" },
@@ -502,7 +514,7 @@ const x402Plugin = {
                 agents: {
                   defaults: {
                     models: {
-                      [DEFAULT_AUTO_REF]: {},
+                      [DEFAULT_AUTO_REF]: { alias: "Auto" },
                       [DEFAULT_MODEL_REF]: { alias: "Kimi" },
                       [OPUS_MODEL_REF]: { alias: "Opus" },
                       [GPT5_MODEL_REF]: { alias: "GPT-5" },
