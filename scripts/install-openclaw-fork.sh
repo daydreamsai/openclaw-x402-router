@@ -819,23 +819,31 @@ show_onboard_instructions() {
 }
 
 if [[ "$OPENCLAW_RUN_ONBOARD" == "1" ]]; then
+  echo ""
+  echo "============================================"
+  echo "  Phase 3: OpenClaw Onboarding"
+  echo "============================================"
+  echo ""
+  export SAW_SOCKET
   if [[ -t 0 ]]; then
-    # stdin is a TTY — interactive prompts will work
-    echo ""
-    echo "============================================"
-    echo "  Phase 3: OpenClaw Onboarding"
-    echo "============================================"
-    echo ""
-    export SAW_SOCKET
+    # stdin is already interactive.
     # shellcheck disable=SC2086
     "$CLI_BIN_PATH" ${OPENCLAW_ONBOARD_ARGS} || {
       echo ""
       echo "==> Onboarding exited with an error. You can re-run it manually:"
       show_onboard_instructions
     }
+  elif [[ -r /dev/tty && -w /dev/tty ]]; then
+    # Support curl | bash installs by reattaching onboarding to the terminal.
+    echo "==> stdin is not a TTY; attaching onboarding to /dev/tty"
+    # shellcheck disable=SC2086
+    "$CLI_BIN_PATH" ${OPENCLAW_ONBOARD_ARGS} </dev/tty || {
+      echo ""
+      echo "==> Onboarding exited with an error. You can re-run it manually:"
+      show_onboard_instructions
+    }
   else
-    # No TTY (curl | bash) — interactive prompts will fail
-    echo "==> Skipping onboarding (no TTY — running via curl | bash)"
+    echo "==> Skipping onboarding (no TTY available)"
     show_onboard_instructions
   fi
 else
