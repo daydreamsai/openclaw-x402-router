@@ -88,7 +88,7 @@ jobs:
           fi
 
           # Capture upstream commit summary before merge attempt
-          UPSTREAM_LOG=$(git log --oneline "origin/main..${TAG_REF}" | head -30)
+          UPSTREAM_LOG=$(git log --oneline --max-count=30 "origin/main..${TAG_REF}")
           UPSTREAM_COUNT=$(git rev-list --count "origin/main..${TAG_REF}")
           {
             echo "upstream_log<<EOF"
