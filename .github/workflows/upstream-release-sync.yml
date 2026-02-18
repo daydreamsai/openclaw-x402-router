@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: write
       pull-requests: write
     steps:
       - name: Checkout
@@ -69,6 +70,7 @@ jobs:
           SAFE_TAG="${TAG//\//-}"
           BRANCH="sync/upstream-release-${SAFE_TAG}"
           TAG_REF="refs/tags/upstream-sync-${SAFE_TAG}"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
 
           if git remote get-url upstream >/dev/null 2>&1; then
             git remote set-url upstream https://github.com/openclaw/openclaw.git
@@ -86,11 +88,101 @@ jobs:
           fi
 
           git checkout -B "${BRANCH}" "origin/main"
-          git merge --no-ff --no-edit "${TAG_REF}"
+          if ! git merge --no-ff --no-edit "${TAG_REF}"; then
+            mapfile -t CONFLICT_FILES < <(git diff --name-only --diff-filter=U)
+            git merge --abort || true
+            git push --force-with-lease origin "${BRANCH}"
+
+            echo "needs_sync=false" >> "$GITHUB_OUTPUT"
+            echo "merge_conflict=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "conflict_files<<EOF"
+              if [ "${#CONFLICT_FILES[@]}" -gt 0 ]; then
+                printf '%s\n' "${CONFLICT_FILES[@]}"
+              fi
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           git push --force-with-lease origin "${BRANCH}"
 
           echo "needs_sync=true" >> "$GITHUB_OUTPUT"
-          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "merge_conflict=false" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update conflict issue
+        if: steps.sync.outputs.merge_conflict == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          TAG_URL: ${{ steps.release.outputs.html_url }}
+          BRANCH: ${{ steps.sync.outputs.branch }}
+          CONFLICT_FILES: ${{ steps.sync.outputs.conflict_files }}
+          RUN_ID: ${{ github.run_id }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${process.env.RUN_ID}`;
+            const title = `chore: manual upstream sync required (${process.env.TAG})`;
+            const releaseUrl =
+              process.env.TAG_URL || `https://github.com/openclaw/openclaw/releases/tag/${process.env.TAG}`;
+            const conflictFiles = (process.env.CONFLICT_FILES || "")
+              .split("\n")
+              .map((item) => item.trim())
+              .filter(Boolean);
+            const filesBody =
+              conflictFiles.length > 0
+                ? conflictFiles.map((file) => `- \`${file}\``).join("\n")
+                : "- (Unable to detect conflicted files from merge output)";
+
+            const body = [
+              `Automated upstream sync for \`${process.env.TAG}\` hit merge conflicts.`,
+              "",
+              `Upstream release: ${releaseUrl}`,
+              `Sync branch: \`${process.env.BRANCH}\``,
+              `Workflow run: ${runUrl}`,
+              "",
+              "**Conflicted files**",
+              filesBody,
+              "",
+              "**Suggested resolution**",
+              "```bash",
+              `git fetch origin main && git fetch upstream --tags`,
+              `git checkout -B ${process.env.BRANCH} origin/main`,
+              `git merge --no-ff --no-edit refs/tags/${process.env.TAG}`,
+              "# resolve conflicts",
+              `git push -u origin ${process.env.BRANCH}`,
+              "```",
+            ].join("\n");
+
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: "open",
+              creator: "github-actions[bot]",
+              per_page: 100,
+            });
+            const match = existing.find((issue) => issue.title === title);
+
+            if (match) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: match.number,
+                body,
+              });
+              core.info(`Updated existing conflict issue #${match.number}`);
+              return;
+            }
+
+            const created = await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              body,
+            });
+            core.info(`Created conflict issue #${created.data.number}`);
 
       - name: Open or update pull request
         if: steps.sync.outputs.needs_sync == 'true'
