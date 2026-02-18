@@ -17,6 +17,8 @@ const DEFAULT_MODEL_ID = "kimi-k2.5";
 const DEFAULT_MODEL_REF = `x402/${DEFAULT_MODEL_ID}`;
 const OPUS_MODEL_ID = "claude-opus-4-6";
 const OPUS_MODEL_REF = `x402/${OPUS_MODEL_ID}`;
+const SONNET_MODEL_ID = "claude-sonnet-4-6";
+const SONNET_MODEL_REF = `x402/${SONNET_MODEL_ID}`;
 const GPT5_MODEL_ID = "gpt-5";
 const GPT5_MODEL_REF = `x402/${GPT5_MODEL_ID}`;
 const CODEX_MODEL_ID = "gpt-5.3-codex";
@@ -28,7 +30,19 @@ const FALLBACK_MAX_TOKENS = 8192;
 const PRIVATE_KEY_REGEX = /^0x[0-9a-fA-F]{64}$/;
 const DEFAULT_SAW_SOCKET = process.env.SAW_SOCKET || "/run/saw/saw.sock";
 const DEFAULT_SAW_WALLET = "main";
-const X402_MODELS = [
+
+type X402ModelDefinition = {
+  id: string;
+  name: string;
+  api: "anthropic-messages" | "openai-completions" | "openai-responses";
+  reasoning: boolean;
+  input: Array<"text" | "image">;
+  cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  contextWindow: number;
+  maxTokens: number;
+};
+
+const X402_MODELS: X402ModelDefinition[] = [
   {
     id: AUTO_MODEL_ID,
     name: "Auto (Smart Routing)",
@@ -57,6 +71,16 @@ const X402_MODELS = [
     reasoning: false,
     input: ["text", "image"],
     cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+    contextWindow: 200000,
+    maxTokens: 64000,
+  },
+  {
+    id: SONNET_MODEL_ID,
+    name: "Claude Sonnet 4.6 (latest)",
+    api: "anthropic-messages",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
     contextWindow: 200000,
     maxTokens: 64000,
   },
@@ -247,6 +271,7 @@ const MODEL_ALIAS_BY_ID: Record<string, string | undefined> = {
   [AUTO_MODEL_ID]: "Auto",
   [DEFAULT_MODEL_ID]: "Kimi",
   [OPUS_MODEL_ID]: "Opus",
+  [SONNET_MODEL_ID]: "Sonnet",
   [GPT5_MODEL_ID]: "GPT-5",
   [CODEX_MODEL_ID]: "Codex",
 };
