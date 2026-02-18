@@ -27,6 +27,10 @@ set -euo pipefail
 #   OPENCLAW_RUN_ONBOARD=1|0
 #   OPENCLAW_ONBOARD_ARGS="onboard --install-daemon --auth-choice x402"  # auto-resolved if empty (non-interactive when piped)
 #   OPENCLAW_NPM_SCRIPT_SHELL=/path/to/sh  # optional npm lifecycle shell override
+#   OPENCLAW_INSTALL_REMOTE_SKILLS=1|0       # install default remote skills into ~/.openclaw/skills
+#   OPENCLAW_SKILLS_DIR=/path/to/skills      # override skills install directory
+#   OPENCLAW_LUCID_SDK_SKILL_URL=<url>       # override lucid-agents-sdk SKILL.md URL
+#   OPENCLAW_XGATE_ROUTER_SKILL_URL=<url>    # override xgate router SKILL.md URL
 #
 # SAW overrides:
 #   SAW_INSTALL=1|0                        # enable/disable SAW phase (default: 1)
@@ -53,6 +57,10 @@ OPENCLAW_BIN="${OPENCLAW_BIN:-}"
 OPENCLAW_RUN_ONBOARD="${OPENCLAW_RUN_ONBOARD:-1}"
 OPENCLAW_ONBOARD_ARGS="${OPENCLAW_ONBOARD_ARGS:-}"  # resolved after TTY detection
 OPENCLAW_NPM_SCRIPT_SHELL="${OPENCLAW_NPM_SCRIPT_SHELL:-}"
+OPENCLAW_INSTALL_REMOTE_SKILLS="${OPENCLAW_INSTALL_REMOTE_SKILLS:-1}"
+OPENCLAW_SKILLS_DIR="${OPENCLAW_SKILLS_DIR:-$HOME/.openclaw/skills}"
+OPENCLAW_LUCID_SDK_SKILL_URL="${OPENCLAW_LUCID_SDK_SKILL_URL:-https://raw.githubusercontent.com/daydreamsai/skills-market/main/plugins/lucid-agents-sdk/skills/SKILL.md}"
+OPENCLAW_XGATE_ROUTER_SKILL_URL="${OPENCLAW_XGATE_ROUTER_SKILL_URL:-https://ai.xgate.run/SKILL.md}"
 
 if [[ -z "$OPENCLAW_SPEC" && -z "$OPENCLAW_REF" && -z "$OPENCLAW_BRANCH" ]]; then
   OPENCLAW_REF="v2026.2.16.daydreams.2"
@@ -730,6 +738,57 @@ CLI_BIN_NAME="$(basename "$CLI_BIN_PATH")"
 echo "==> Installed CLI: ${CLI_BIN_NAME} (${CLI_BIN_PATH})"
 INSTALLED_VERSION="$("$CLI_BIN_PATH" --version 2>/dev/null || true)"
 echo "==> Installed version: ${INSTALLED_VERSION:-unknown}"
+
+install_remote_skill() {
+  local skill_name="$1"
+  local skill_url="$2"
+  local skill_dir="${OPENCLAW_SKILLS_DIR}/${skill_name}"
+  local skill_file="${skill_dir}/SKILL.md"
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  mkdir -p "$skill_dir"
+  if curl -fsSL --connect-timeout 10 --retry 2 --retry-delay 1 "$skill_url" >"$tmp_file"; then
+    if [[ ! -s "$tmp_file" ]]; then
+      echo "WARNING: downloaded empty skill payload for ${skill_name} (${skill_url})" >&2
+      rm -f "$tmp_file"
+      return 1
+    fi
+    mv "$tmp_file" "$skill_file"
+    echo "==> Installed skill: ${skill_name} (${skill_file})"
+    return 0
+  fi
+
+  rm -f "$tmp_file"
+  echo "WARNING: failed to install skill ${skill_name} from ${skill_url}" >&2
+  return 1
+}
+
+install_default_remote_skills() {
+  local failures=0
+  mkdir -p "$OPENCLAW_SKILLS_DIR"
+  echo "==> Installing remote skills into ${OPENCLAW_SKILLS_DIR}"
+
+  install_remote_skill "lucid-agents-sdk" "$OPENCLAW_LUCID_SDK_SKILL_URL" || failures=1
+  install_remote_skill "xgate-router" "$OPENCLAW_XGATE_ROUTER_SKILL_URL" || failures=1
+
+  if [[ "$failures" -ne 0 ]]; then
+    echo "==> Remote skills setup completed with warnings. Re-run later if needed." >&2
+  else
+    echo "==> Remote skills setup complete"
+  fi
+}
+
+if [[ "$OPENCLAW_INSTALL_REMOTE_SKILLS" == "1" ]]; then
+  echo ""
+  echo "============================================"
+  echo "  Phase 2.5: Remote Skills Setup"
+  echo "============================================"
+  echo ""
+  install_default_remote_skills
+else
+  echo "==> Skipping remote skills setup (OPENCLAW_INSTALL_REMOTE_SKILLS=${OPENCLAW_INSTALL_REMOTE_SKILLS})"
+fi
 
 # ── Phase 3: Onboarding ────────────────────────────────────────────────────
 
