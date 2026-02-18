@@ -106,6 +106,28 @@ describe("parseErrorResponse", () => {
 });
 
 describe("error detection helpers", () => {
+  describe("isInsufficientTokenBalanceError", () => {
+    it("returns true for code='insufficient_token_balance'", () => {
+      expect(
+        __testing.isInsufficientTokenBalanceError({ code: "insufficient_token_balance" }),
+      ).toBe(true);
+    });
+
+    it("returns true for error text containing 'insufficient token balance'", () => {
+      expect(
+        __testing.isInsufficientTokenBalanceError({
+          error: "402 Insufficient token balance",
+        }),
+      ).toBe(true);
+    });
+
+    it("returns false for unrelated errors", () => {
+      expect(__testing.isInsufficientTokenBalanceError({ code: "rate_limit_exceeded" })).toBe(
+        false,
+      );
+    });
+  });
+
   describe("isCapExhausted", () => {
     it("returns true for code='cap_exhausted'", () => {
       expect(__testing.isCapExhausted({ code: "cap_exhausted" })).toBe(true);
@@ -196,6 +218,43 @@ describe("error detection helpers", () => {
     it("returns false for network errors", () => {
       expect(__testing.shouldInvalidatePermit({ error: "Network timeout" })).toBe(false);
     });
+  });
+});
+
+describe("rewriteInsufficientTokenBalanceResponse", () => {
+  it("rewrites 402 insufficient token balance responses with human guidance", async () => {
+    const response = new Response(
+      JSON.stringify({
+        error: { code: "insufficient_token_balance", message: "Insufficient token balance" },
+      }),
+      {
+        status: 402,
+        headers: { "content-type": "application/json" },
+      },
+    );
+
+    const rewritten = await __testing.rewriteInsufficientTokenBalanceResponse(response);
+    const body = (await rewritten.json()) as {
+      error?: { message?: string; code?: string };
+    };
+
+    expect(rewritten.status).toBe(402);
+    expect(body.error?.code).toBe("insufficient_token_balance");
+    expect(body.error?.message).toBe(__testing.INSUFFICIENT_TOKEN_BALANCE_USER_MESSAGE);
+    expect(body.error?.message).toContain("linked wallet on Base");
+    expect(body.error?.message).toContain("USDC");
+  });
+
+  it("does not rewrite unrelated 402 responses", async () => {
+    const response = new Response(JSON.stringify({ error: { message: "Payment required" } }), {
+      status: 402,
+      headers: { "content-type": "application/json" },
+    });
+
+    const rewritten = await __testing.rewriteInsufficientTokenBalanceResponse(response);
+    const body = await rewritten.json();
+
+    expect(body).toEqual({ error: { message: "Payment required" } });
   });
 });
 

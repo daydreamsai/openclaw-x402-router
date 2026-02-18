@@ -163,6 +163,8 @@ interface CachedPermit {
 
 const ROUTER_CONFIG_CACHE = new Map<string, RouterConfig>();
 const PERMIT_CACHE = new Map<string, CachedPermit>();
+const INSUFFICIENT_TOKEN_BALANCE_USER_MESSAGE =
+  "x402 token balance too low. Fund your linked wallet on Base with USDC to enable the LLM APIs, then retry.";
 
 function normalizePrivateKey(value: string | undefined): string | null {
   if (!value) {
@@ -268,6 +270,14 @@ function normalizeErrorText(error?: string, message?: string): string {
   return `${error ?? ""} ${message ?? ""}`.toLowerCase();
 }
 
+function isInsufficientTokenBalanceError(error: ErrorResponse): boolean {
+  if (error.code === "insufficient_token_balance") {
+    return true;
+  }
+  const text = normalizeErrorText(error.error, error.message);
+  return text.includes("insufficient token balance");
+}
+
 function isCapExhausted(error: ErrorResponse): boolean {
   if (error.code === "cap_exhausted") {
     return true;
@@ -300,6 +310,41 @@ function shouldInvalidatePermit(error: ErrorResponse): boolean {
     isSessionClosed(error) ||
     isSettlementBlocked(error) ||
     isSessionPermitMismatch(error)
+  );
+}
+
+async function rewriteInsufficientTokenBalanceResponse(
+  response: Response,
+  parsedError?: ErrorResponse | null,
+): Promise<Response> {
+  if (response.status !== 402) {
+    return response;
+  }
+  const matchesParsedError = parsedError ? isInsufficientTokenBalanceError(parsedError) : false;
+  let matchesRawBody = false;
+  if (!matchesParsedError) {
+    try {
+      const rawBody = await response.clone().text();
+      matchesRawBody = rawBody.toLowerCase().includes("insufficient token balance");
+    } catch {
+      matchesRawBody = false;
+    }
+  }
+  if (!matchesParsedError && !matchesRawBody) {
+    return response;
+  }
+  const headers = new Headers(response.headers);
+  headers.set("content-type", "application/json; charset=utf-8");
+  const code = parsedError?.code || "insufficient_token_balance";
+  return new Response(
+    JSON.stringify({
+      type: "error",
+      error: {
+        code,
+        message: INSUFFICIENT_TOKEN_BALANCE_USER_MESSAGE,
+      },
+    }),
+    { status: 402, statusText: "Token Balance Low", headers },
   );
 }
 
@@ -875,7 +920,7 @@ export function maybeWrapStreamFnWithX402Payment(params: {
       const invalidatePermit = errorResponse ? shouldInvalidatePermit(errorResponse) : false;
       if (!paymentRequired && !invalidatePermit) {
         // No retry hints from router and no known stale-permit signal.
-        return response;
+        return await rewriteInsufficientTokenBalanceResponse(response, errorResponse);
       }
 
       const previousConfig = routerConfig;
@@ -911,7 +956,15 @@ export function maybeWrapStreamFnWithX402Payment(params: {
         permitCap: refreshedCap,
         minDeadlineExclusive: minDeadline,
       });
-      return await sendWithPermit(refreshed);
+      const retriedResponse = await sendWithPermit(refreshed);
+      let retriedErrorResponse: ErrorResponse | null = null;
+      try {
+        const body = await retriedResponse.clone().json();
+        retriedErrorResponse = parseErrorResponse(body);
+      } catch {
+        // Non-JSON bodies are expected on some failures.
+      }
+      return await rewriteInsufficientTokenBalanceResponse(retriedResponse, retriedErrorResponse);
     } catch {
       return baseFetch(input, init);
     }
@@ -924,10 +977,13 @@ export const __testing = {
   buildPermitCacheKey,
   parseSawConfig,
   parseErrorResponse,
+  isInsufficientTokenBalanceError,
   isCapExhausted,
   isSessionClosed,
   isSettlementBlocked,
   isSessionPermitMismatch,
   shouldInvalidatePermit,
   computePermitDeadline,
+  rewriteInsufficientTokenBalanceResponse,
+  INSUFFICIENT_TOKEN_BALANCE_USER_MESSAGE,
 };
