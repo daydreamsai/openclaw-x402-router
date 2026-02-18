@@ -84,47 +84,6 @@ const X402_MODELS: X402ModelDefinition[] = [
     contextWindow: 200000,
     maxTokens: 64000,
   },
-  // xgate does not publish token limits for media generation models.
-  {
-    id: "fal-ai/flux-2-flex",
-    name: "Flux 2 Flex",
-    api: "openai-completions",
-    reasoning: false,
-    input: ["text", "image"],
-    cost: { input: 0.05, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: FALLBACK_CONTEXT_WINDOW,
-    maxTokens: FALLBACK_MAX_TOKENS,
-  },
-  {
-    id: "fal-ai/flux-2-flex/edit",
-    name: "Flux 2 Flex (Edit)",
-    api: "openai-completions",
-    reasoning: false,
-    input: ["text", "image"],
-    cost: { input: 0.05, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: FALLBACK_CONTEXT_WINDOW,
-    maxTokens: FALLBACK_MAX_TOKENS,
-  },
-  {
-    id: "fal-ai/flux-2-pro",
-    name: "Flux 2 Pro",
-    api: "openai-completions",
-    reasoning: false,
-    input: ["text", "image"],
-    cost: { input: 0.03, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: FALLBACK_CONTEXT_WINDOW,
-    maxTokens: FALLBACK_MAX_TOKENS,
-  },
-  {
-    id: "fal-ai/kling-video/o3/standard/reference-to-video",
-    name: "Kling O3 Reference to Video (Standard)",
-    api: "openai-completions",
-    reasoning: false,
-    input: ["text", "image"],
-    cost: { input: 0.28, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: FALLBACK_CONTEXT_WINDOW,
-    maxTokens: FALLBACK_MAX_TOKENS,
-  },
   {
     id: DEFAULT_MODEL_ID,
     name: "Kimi K2.5",
@@ -276,6 +235,37 @@ const MODEL_ALIAS_BY_ID: Record<string, string | undefined> = {
   [CODEX_MODEL_ID]: "Codex",
 };
 
+function buildDefaultModelOptions() {
+  return X402_MODELS.map((model) => {
+    const value = `x402/${model.id}`;
+    return {
+      value,
+      label: model.name,
+      hint: value === DEFAULT_AUTO_REF ? "Router chooses the model automatically" : value,
+    };
+  });
+}
+
+async function promptDefaultModelRef(ctx: ProviderAuthContext): Promise<string> {
+  const options = buildDefaultModelOptions();
+  if (options.length === 0) {
+    return DEFAULT_AUTO_REF;
+  }
+  if (options.length === 1) {
+    return options[0]?.value ?? DEFAULT_AUTO_REF;
+  }
+
+  const selected = String(
+    await ctx.prompter.select({
+      message: "Default Daydreams model",
+      options,
+      initialValue: DEFAULT_AUTO_REF,
+    }),
+  ).trim();
+
+  return options.some((option) => option.value === selected) ? selected : DEFAULT_AUTO_REF;
+}
+
 function buildDefaultAllowlistedModels(): Record<string, { alias?: string }> {
   const entries: Record<string, { alias?: string }> = {};
   for (const model of X402_MODELS) {
@@ -392,6 +382,7 @@ const x402Plugin = {
               validate: (value: string) => (normalizeNetwork(value) ? undefined : "Required"),
             });
             const network = normalizeNetwork(String(networkInput)) ?? DEFAULT_NETWORK;
+            const selectedDefaultModelRef = await promptDefaultModelRef(ctx);
 
             const existingPluginConfig =
               ctx.config.plugins?.entries?.[PLUGIN_ID]?.config &&
@@ -443,7 +434,7 @@ const x402Plugin = {
                   },
                 },
               },
-              defaultModel: DEFAULT_AUTO_REF,
+              defaultModel: selectedDefaultModelRef,
               notes: [
                 `Daydreams Router base URL set to ${routerUrl}.`,
                 `SAW signing via wallet "${walletName}" at ${socketPath}.`,
@@ -503,6 +494,7 @@ const x402Plugin = {
               validate: (value: string) => (normalizeNetwork(value) ? undefined : "Required"),
             });
             const network = normalizeNetwork(String(networkInput)) ?? DEFAULT_NETWORK;
+            const selectedDefaultModelRef = await promptDefaultModelRef(ctx);
 
             const existingPluginConfig =
               ctx.config.plugins?.entries?.[PLUGIN_ID]?.config &&
@@ -554,7 +546,7 @@ const x402Plugin = {
                   },
                 },
               },
-              defaultModel: DEFAULT_AUTO_REF,
+              defaultModel: selectedDefaultModelRef,
               notes: [
                 `Daydreams Router base URL set to ${routerUrl}.`,
                 "Permit caps apply per signed session; update plugins.entries.daydreams-x402-auth.config to change.",
