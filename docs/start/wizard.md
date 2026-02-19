@@ -209,11 +209,13 @@ Clients (macOS app, Control UI) can render steps without re‑implementing onboa
 ## Signal setup (signal-cli)
 
 The wizard can install `signal-cli` from GitHub releases:
+
 - Downloads the appropriate release asset.
 - Stores it under `~/.clawdbot/tools/signal-cli/<version>/`.
 - Writes `channels.signal.cliPath` to your config.
 
 Notes:
+
 - JVM builds require **Java 21**.
 - Native builds are used when available.
 - Windows uses WSL2; signal-cli install follows the Linux flow inside WSL.
@@ -221,6 +223,7 @@ Notes:
 ## What the wizard writes
 
 Typical fields in `~/.clawdbot/moltbot.json`:
+
 - `agents.defaults.workspace`
 - `agents.defaults.model` / `models.providers` (if Minimax chosen)
 - `gateway.*` (mode, bind, auth, tailscale)

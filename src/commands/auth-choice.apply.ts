@@ -1,7 +1,6 @@
 import type { OpenClawConfig } from "../config/config.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
-import type { AuthChoice } from "./onboard-types.js";
 import { applyAuthChoiceAnthropic } from "./auth-choice.apply.anthropic.js";
 import { applyAuthChoiceApiProviders } from "./auth-choice.apply.api-providers.js";
 import { applyAuthChoiceCopilotProxy } from "./auth-choice.apply.copilot-proxy.js";
@@ -14,6 +13,8 @@ import { applyAuthChoiceOpenAI } from "./auth-choice.apply.openai.js";
 import { applyAuthChoiceQwenPortal } from "./auth-choice.apply.qwen-portal.js";
 import { applyAuthChoiceVllm } from "./auth-choice.apply.vllm.js";
 import { applyAuthChoiceX402 } from "./auth-choice.apply.x402.js";
+import { applyAuthChoiceXAI } from "./auth-choice.apply.xai.js";
+import type { AuthChoice } from "./onboard-types.js";
 
 export type ApplyAuthChoiceParams = {
   authChoice: AuthChoice;
@@ -53,6 +54,7 @@ export async function applyAuthChoice(
     applyAuthChoiceGoogleGeminiCli,
     applyAuthChoiceCopilotProxy,
     applyAuthChoiceQwenPortal,
+    applyAuthChoiceXAI,
     applyAuthChoiceX402,
   ];
 
