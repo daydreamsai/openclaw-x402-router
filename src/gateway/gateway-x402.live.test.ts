@@ -220,7 +220,7 @@ describeLive("gateway live (x402 local-signing)", () => {
           {
             sessionKey,
             idempotencyKey: `idem-${randomUUID()}`,
-            message: `Reply with: X402 LIVE OK ${nonce}.` + " Include exactly one sentence.",
+            message: `Reply with: X402 LIVE OK ${nonce}. Include exactly one sentence.`,
             deliver: false,
           },
           { expectFinal: true },
