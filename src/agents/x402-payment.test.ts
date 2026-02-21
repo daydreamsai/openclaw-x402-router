@@ -256,6 +256,46 @@ describe("rewriteInsufficientTokenBalanceResponse", () => {
 
     expect(body).toEqual({ error: { message: "Payment required" } });
   });
+
+  it("includes the linked wallet address when provided", async () => {
+    const response = new Response(
+      JSON.stringify({
+        error: { code: "insufficient_token_balance", message: "Insufficient token balance" },
+      }),
+      {
+        status: 402,
+        headers: { "content-type": "application/json" },
+      },
+    );
+
+    const rewritten = await __testing.rewriteInsufficientTokenBalanceResponse(
+      response,
+      undefined,
+      "0x1111111111111111111111111111111111111111",
+    );
+    const body = (await rewritten.json()) as {
+      error?: { message?: string; code?: string };
+    };
+
+    expect(body.error?.message).toContain("Linked wallet: 0x1111111111111111111111111111111111111111.");
+  });
+});
+
+describe("formatInsufficientTokenBalanceMessage", () => {
+  it("returns base guidance when wallet is missing", () => {
+    expect(__testing.formatInsufficientTokenBalanceMessage()).toBe(
+      __testing.INSUFFICIENT_TOKEN_BALANCE_USER_MESSAGE,
+    );
+  });
+
+  it("appends wallet guidance when wallet is provided", () => {
+    const message = __testing.formatInsufficientTokenBalanceMessage(
+      "0x2222222222222222222222222222222222222222",
+    );
+    expect(message).toContain(
+      "Linked wallet: 0x2222222222222222222222222222222222222222.",
+    );
+  });
 });
 
 describe("computePermitDeadline", () => {

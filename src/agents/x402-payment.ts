@@ -166,6 +166,13 @@ const PERMIT_CACHE = new Map<string, CachedPermit>();
 const INSUFFICIENT_TOKEN_BALANCE_USER_MESSAGE =
   "x402 token balance too low. Fund your linked wallet on Base with USDC to enable the LLM APIs, then retry.";
 
+function formatInsufficientTokenBalanceMessage(walletAddress?: string): string {
+  if (!walletAddress) {
+    return INSUFFICIENT_TOKEN_BALANCE_USER_MESSAGE;
+  }
+  return `${INSUFFICIENT_TOKEN_BALANCE_USER_MESSAGE} Linked wallet: ${walletAddress}.`;
+}
+
 function normalizePrivateKey(value: string | undefined): string | null {
   if (!value) {
     return null;
@@ -316,6 +323,7 @@ function shouldInvalidatePermit(error: ErrorResponse): boolean {
 async function rewriteInsufficientTokenBalanceResponse(
   response: Response,
   parsedError?: ErrorResponse | null,
+  walletAddress?: string,
 ): Promise<Response> {
   if (response.status !== 402) {
     return response;
@@ -341,7 +349,7 @@ async function rewriteInsufficientTokenBalanceResponse(
       type: "error",
       error: {
         code,
-        message: INSUFFICIENT_TOKEN_BALANCE_USER_MESSAGE,
+        message: formatInsufficientTokenBalanceMessage(walletAddress),
       },
     }),
     { status: 402, statusText: "Token Balance Low", headers },
@@ -920,7 +928,11 @@ export function maybeWrapStreamFnWithX402Payment(params: {
       const invalidatePermit = errorResponse ? shouldInvalidatePermit(errorResponse) : false;
       if (!paymentRequired && !invalidatePermit) {
         // No retry hints from router and no known stale-permit signal.
-        return await rewriteInsufficientTokenBalanceResponse(response, errorResponse);
+        return await rewriteInsufficientTokenBalanceResponse(
+          response,
+          errorResponse,
+          getOwnerAddress(backend),
+        );
       }
 
       const previousConfig = routerConfig;
@@ -964,7 +976,11 @@ export function maybeWrapStreamFnWithX402Payment(params: {
       } catch {
         // Non-JSON bodies are expected on some failures.
       }
-      return await rewriteInsufficientTokenBalanceResponse(retriedResponse, retriedErrorResponse);
+      return await rewriteInsufficientTokenBalanceResponse(
+        retriedResponse,
+        retriedErrorResponse,
+        getOwnerAddress(backend),
+      );
     } catch {
       return baseFetch(input, init);
     }
@@ -985,5 +1001,6 @@ export const __testing = {
   shouldInvalidatePermit,
   computePermitDeadline,
   rewriteInsufficientTokenBalanceResponse,
+  formatInsufficientTokenBalanceMessage,
   INSUFFICIENT_TOKEN_BALANCE_USER_MESSAGE,
 };
