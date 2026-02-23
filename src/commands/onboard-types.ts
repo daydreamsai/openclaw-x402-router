@@ -46,6 +46,9 @@ export type AuthChoice =
   | "github-copilot"
   | "copilot-proxy"
   | "qwen-portal"
+  | "mistral-api-key"
+  | "volcengine-api-key"
+  | "byteplus-api-key"
   | "x402"
   | "custom-api-key"
   | "skip";
@@ -67,11 +70,14 @@ export type AuthChoiceGroupId =
   | "minimax"
   | "synthetic"
   | "venice"
+  | "mistral"
   | "qwen"
   | "together"
   | "huggingface"
   | "qianfan"
   | "xai"
+  | "volcengine"
+  | "byteplus"
   | "x402"
   | "custom";
 export type GatewayAuthChoice = "token" | "password";
@@ -103,6 +109,7 @@ export type OnboardOptions = {
   tokenExpiresIn?: string;
   anthropicApiKey?: string;
   openaiApiKey?: string;
+  mistralApiKey?: string;
   openrouterApiKey?: string;
   litellmApiKey?: string;
   aiGatewayApiKey?: string;
@@ -121,6 +128,8 @@ export type OnboardOptions = {
   huggingfaceApiKey?: string;
   opencodeZenApiKey?: string;
   xaiApiKey?: string;
+  volcengineApiKey?: string;
+  byteplusApiKey?: string;
   qianfanApiKey?: string;
   customBaseUrl?: string;
   customApiKey?: string;

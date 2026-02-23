@@ -48,6 +48,7 @@ import {
   resetToolStream as resetToolStreamInternal,
   type ToolStreamEntry,
   type CompactionStatus,
+  type FallbackStatus,
 } from "./app-tool-stream.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { normalizeAssistantIdentity } from "./assistant-identity.ts";
@@ -80,6 +81,7 @@ import type {
   NostrProfile,
 } from "./types.ts";
 import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types.ts";
+import { generateUUID } from "./uuid.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
 
 declare global {
@@ -106,6 +108,7 @@ function resolveOnboardingMode(): boolean {
 @customElement("openclaw-app")
 export class OpenClawApp extends LitElement {
   private i18nController = new I18nController(this);
+  clientInstanceId = generateUUID();
   @state() settings: UiSettings = loadSettings();
   constructor() {
     super();
@@ -121,6 +124,7 @@ export class OpenClawApp extends LitElement {
   @state() themeResolved: ResolvedTheme = "dark";
   @state() hello: GatewayHelloOk | null = null;
   @state() lastError: string | null = null;
+  @state() lastErrorCode: string | null = null;
   @state() eventLog: EventLogEntry[] = [];
   private eventLogBuffer: EventLogEntry[] = [];
   private toolStreamSyncTimer: number | null = null;
@@ -140,6 +144,7 @@ export class OpenClawApp extends LitElement {
   @state() chatStreamStartedAt: number | null = null;
   @state() chatRunId: string | null = null;
   @state() compactionStatus: CompactionStatus | null = null;
+  @state() fallbackStatus: FallbackStatus | null = null;
   @state() chatAvatarUrl: string | null = null;
   @state() chatThinkingLevel: string | null = null;
   @state() chatQueue: ChatQueueItem[] = [];

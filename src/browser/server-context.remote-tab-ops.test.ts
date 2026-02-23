@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { withFetchPreconnect } from "../test-utils/fetch-mock.js";
 import * as cdpModule from "./cdp.js";
+import { InvalidBrowserNavigationUrlError } from "./navigation-guard.js";
 import * as pwAiModule from "./pw-ai-module.js";
 import type { BrowserServerState } from "./server-context.js";
 import "./server-context.chrome-test-harness.js";
@@ -63,6 +64,16 @@ function createRemoteRouteHarness(fetchMock?: ReturnType<typeof vi.fn>) {
   return { state, remote: ctx.forProfile("remote"), fetchMock: activeFetchMock };
 }
 
+function createSequentialPageLister<T>(responses: T[]) {
+  return vi.fn(async () => {
+    const next = responses.shift();
+    if (!next) {
+      throw new Error("no more responses");
+    }
+    return next;
+  });
+}
+
 describe("browser server-context remote profile tab operations", () => {
   it("uses Playwright tab operations when available", async () => {
     const listPagesViaPlaywright = vi.fn(async () => [
@@ -94,7 +105,6 @@ describe("browser server-context remote profile tab operations", () => {
       cdpUrl: "https://browserless.example/chrome?token=abc",
       url: "http://127.0.0.1:3000",
       ssrfPolicy: { allowPrivateNetwork: true },
-      navigationChecked: true,
     });
 
     await remote.closeTab("T1");
@@ -151,6 +161,43 @@ describe("browser server-context remote profile tab operations", () => {
     expect(first.targetId).toBe("A");
     const second = await remote.ensureTabAvailable();
     expect(second.targetId).toBe("A");
+  });
+
+  it("falls back to the only tab for remote profiles when targetId is stale", async () => {
+    const responses = [
+      [{ targetId: "T1", title: "Tab 1", url: "https://example.com", type: "page" }],
+      [{ targetId: "T1", title: "Tab 1", url: "https://example.com", type: "page" }],
+    ];
+    const listPagesViaPlaywright = createSequentialPageLister(responses);
+
+    vi.spyOn(pwAiModule, "getPwAiModule").mockResolvedValue({
+      listPagesViaPlaywright,
+    } as unknown as Awaited<ReturnType<typeof pwAiModule.getPwAiModule>>);
+
+    const { remote } = createRemoteRouteHarness();
+    const chosen = await remote.ensureTabAvailable("STALE_TARGET");
+    expect(chosen.targetId).toBe("T1");
+  });
+
+  it("keeps rejecting stale targetId for remote profiles when multiple tabs exist", async () => {
+    const responses = [
+      [
+        { targetId: "A", title: "A", url: "https://a.example", type: "page" },
+        { targetId: "B", title: "B", url: "https://b.example", type: "page" },
+      ],
+      [
+        { targetId: "A", title: "A", url: "https://a.example", type: "page" },
+        { targetId: "B", title: "B", url: "https://b.example", type: "page" },
+      ],
+    ];
+    const listPagesViaPlaywright = createSequentialPageLister(responses);
+
+    vi.spyOn(pwAiModule, "getPwAiModule").mockResolvedValue({
+      listPagesViaPlaywright,
+    } as unknown as Awaited<ReturnType<typeof pwAiModule.getPwAiModule>>);
+
+    const { remote } = createRemoteRouteHarness();
+    await expect(remote.ensureTabAvailable("STALE_TARGET")).rejects.toThrow(/tab not found/i);
   });
 
   it("uses Playwright focus for remote profiles when available", async () => {
@@ -256,7 +303,22 @@ describe("browser server-context tab selection state", () => {
       cdpUrl: "http://127.0.0.1:18800",
       url: "http://127.0.0.1:8080",
       ssrfPolicy: { allowPrivateNetwork: true },
-      navigationChecked: true,
     });
+  });
+
+  it("blocks unsupported non-network URLs before any HTTP tab-open fallback", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("unexpected fetch");
+    });
+
+    global.fetch = withFetchPreconnect(fetchMock);
+    const state = makeState("openclaw");
+    const ctx = createBrowserRouteContext({ getState: () => state });
+    const openclaw = ctx.forProfile("openclaw");
+
+    await expect(openclaw.openTab("file:///etc/passwd")).rejects.toBeInstanceOf(
+      InvalidBrowserNavigationUrlError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

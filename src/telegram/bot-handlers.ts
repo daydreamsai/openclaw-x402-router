@@ -1,12 +1,15 @@
 import type { Message, ReactionTypeEmoji } from "@grammyjs/types";
-import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveAgentDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { hasControlCommand } from "../auto-reply/command-detection.js";
 import {
   createInboundDebouncer,
   resolveInboundDebounceMs,
 } from "../auto-reply/inbound-debounce.js";
 import { buildCommandsPaginationKeyboard } from "../auto-reply/reply/commands-info.js";
-import { buildModelsProviderData } from "../auto-reply/reply/commands-models.js";
+import {
+  buildModelsProviderData,
+  formatModelsAvailableHeader,
+} from "../auto-reply/reply/commands-models.js";
 import { resolveStoredModelOverride } from "../auto-reply/reply/model-selection.js";
 import { listSkillCommandsForAgents } from "../auto-reply/skill-commands.js";
 import { buildCommandsMessagePaginated } from "../auto-reply/status.js";
@@ -17,6 +20,7 @@ import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 import type { TelegramGroupConfig, TelegramTopicConfig } from "../config/types.js";
 import { danger, logVerbose, warn } from "../globals.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
+import { MediaFetchError } from "../media/fetch.js";
 import { readChannelAllowFromStore } from "../pairing/pairing-store.js";
 import { resolveAgentRoute } from "../routing/resolve-route.js";
 import { resolveThreadSessionKeys } from "../routing/session-key.js";
@@ -57,6 +61,15 @@ import {
 } from "./model-buttons.js";
 import { buildInlineKeyboard } from "./send.js";
 import { wasSentByBot } from "./sent-message-cache.js";
+
+function isMediaSizeLimitError(err: unknown): boolean {
+  const errMsg = String(err);
+  return errMsg.includes("exceeds") && errMsg.includes("MB limit");
+}
+
+function isRecoverableMediaGroupError(err: unknown): boolean {
+  return err instanceof MediaFetchError || isMediaSizeLimitError(err);
+}
 
 export const registerTelegramHandlers = ({
   cfg,
@@ -101,13 +114,32 @@ export const registerTelegramHandlers = ({
   let textFragmentProcessing: Promise<void> = Promise.resolve();
 
   const debounceMs = resolveInboundDebounceMs({ cfg, channel: "telegram" });
+  const FORWARD_BURST_DEBOUNCE_MS = 80;
+  type TelegramDebounceLane = "default" | "forward";
   type TelegramDebounceEntry = {
     ctx: TelegramContext;
     msg: Message;
     allMedia: TelegramMediaRef[];
     storeAllowFrom: string[];
     debounceKey: string | null;
+    debounceLane: TelegramDebounceLane;
     botUsername?: string;
+  };
+  const resolveTelegramDebounceLane = (msg: Message): TelegramDebounceLane => {
+    const forwardMeta = msg as {
+      forward_origin?: unknown;
+      forward_from?: unknown;
+      forward_from_chat?: unknown;
+      forward_sender_name?: unknown;
+      forward_date?: unknown;
+    };
+    return (forwardMeta.forward_origin ??
+      forwardMeta.forward_from ??
+      forwardMeta.forward_from_chat ??
+      forwardMeta.forward_sender_name ??
+      forwardMeta.forward_date)
+      ? "forward"
+      : "default";
   };
   const buildSyntheticTextMessage = (params: {
     base: Message;
@@ -135,16 +167,19 @@ export const registerTelegramHandlers = ({
   };
   const inboundDebouncer = createInboundDebouncer<TelegramDebounceEntry>({
     debounceMs,
+    resolveDebounceMs: (entry) =>
+      entry.debounceLane === "forward" ? FORWARD_BURST_DEBOUNCE_MS : debounceMs,
     buildKey: (entry) => entry.debounceKey,
     shouldDebounce: (entry) => {
-      if (entry.allMedia.length > 0) {
-        return false;
-      }
       const text = entry.msg.text ?? entry.msg.caption ?? "";
-      if (!text.trim()) {
+      const hasText = text.trim().length > 0;
+      if (hasText && hasControlCommand(text, cfg, { botUsername: entry.botUsername })) {
         return false;
       }
-      return !hasControlCommand(text, cfg, { botUsername: entry.botUsername });
+      if (entry.debounceLane === "forward") {
+        return true;
+      }
+      return entry.allMedia.length === 0 && hasText;
     },
     onFlush: async (entries) => {
       const last = entries.at(-1);
@@ -159,7 +194,8 @@ export const registerTelegramHandlers = ({
         .map((entry) => entry.msg.text ?? entry.msg.caption ?? "")
         .filter(Boolean)
         .join("\n");
-      if (!combinedText.trim()) {
+      const combinedMedia = entries.flatMap((entry) => entry.allMedia);
+      if (!combinedText.trim() && combinedMedia.length === 0) {
         return;
       }
       const first = entries[0];
@@ -172,7 +208,7 @@ export const registerTelegramHandlers = ({
       const messageIdOverride = last.msg.message_id ? String(last.msg.message_id) : undefined;
       await processMessage(
         buildSyntheticContext(baseCtx, syntheticMessage),
-        [],
+        combinedMedia,
         first.storeAllowFrom,
         messageIdOverride ? { messageIdOverride } : undefined,
       );
@@ -182,13 +218,17 @@ export const registerTelegramHandlers = ({
     },
   });
 
-  const resolveTelegramSessionModel = (params: {
+  const resolveTelegramSessionState = (params: {
     chatId: number | string;
     isGroup: boolean;
     isForum: boolean;
     messageThreadId?: number;
     resolvedThreadId?: number;
-  }): string | undefined => {
+  }): {
+    agentId: string;
+    sessionEntry: ReturnType<typeof loadSessionStore>[string];
+    model?: string;
+  } => {
     const resolvedThreadId =
       params.resolvedThreadId ??
       resolveTelegramForumThreadId({
@@ -229,17 +269,29 @@ export const registerTelegramHandlers = ({
       sessionKey,
     });
     if (storedOverride) {
-      return storedOverride.provider
-        ? `${storedOverride.provider}/${storedOverride.model}`
-        : storedOverride.model;
+      return {
+        agentId: route.agentId,
+        sessionEntry: entry,
+        model: storedOverride.provider
+          ? `${storedOverride.provider}/${storedOverride.model}`
+          : storedOverride.model,
+      };
     }
     const provider = entry?.modelProvider?.trim();
     const model = entry?.model?.trim();
     if (provider && model) {
-      return `${provider}/${model}`;
+      return {
+        agentId: route.agentId,
+        sessionEntry: entry,
+        model: `${provider}/${model}`,
+      };
     }
     const modelCfg = cfg.agents?.defaults?.model;
-    return typeof modelCfg === "string" ? modelCfg : modelCfg?.primary;
+    return {
+      agentId: route.agentId,
+      sessionEntry: entry,
+      model: typeof modelCfg === "string" ? modelCfg : modelCfg?.primary,
+    };
   };
 
   const processMediaGroup = async (entry: MediaGroupEntry) => {
@@ -251,7 +303,18 @@ export const registerTelegramHandlers = ({
 
       const allMedia: TelegramMediaRef[] = [];
       for (const { ctx } of entry.messages) {
-        const media = await resolveMedia(ctx, mediaMaxBytes, opts.token, opts.proxyFetch);
+        let media;
+        try {
+          media = await resolveMedia(ctx, mediaMaxBytes, opts.token, opts.proxyFetch);
+        } catch (mediaErr) {
+          if (!isRecoverableMediaGroupError(mediaErr)) {
+            throw mediaErr;
+          }
+          runtime.log?.(
+            warn(`media group: skipping photo that failed to fetch: ${String(mediaErr)}`),
+          );
+          continue;
+        }
         if (media) {
           allMedia.push({
             path: media.path,
@@ -644,8 +707,7 @@ export const registerTelegramHandlers = ({
     try {
       media = await resolveMedia(ctx, mediaMaxBytes, opts.token, opts.proxyFetch);
     } catch (mediaErr) {
-      const errMsg = String(mediaErr);
-      if (errMsg.includes("exceeds") && errMsg.includes("MB limit")) {
+      if (isMediaSizeLimitError(mediaErr)) {
         if (sendOversizeWarning) {
           const limitMb = Math.round(mediaMaxBytes / (1024 * 1024));
           await withTelegramApiErrorLogging({
@@ -657,10 +719,19 @@ export const registerTelegramHandlers = ({
               }),
           }).catch(() => {});
         }
-        logger.warn({ chatId, error: errMsg }, oversizeLogMessage);
+        logger.warn({ chatId, error: String(mediaErr) }, oversizeLogMessage);
         return;
       }
-      throw mediaErr;
+      logger.warn({ chatId, error: String(mediaErr) }, "media fetch failed");
+      await withTelegramApiErrorLogging({
+        operation: "sendMessage",
+        runtime,
+        fn: () =>
+          bot.api.sendMessage(chatId, "⚠️ Failed to download media. Please try again.", {
+            reply_to_message_id: msg.message_id,
+          }),
+      }).catch(() => {});
+      return;
     }
 
     // Skip sticker-only messages where the sticker was skipped (animated/video)
@@ -683,8 +754,9 @@ export const registerTelegramHandlers = ({
     const senderId = msg.from?.id ? String(msg.from.id) : "";
     const conversationKey =
       resolvedThreadId != null ? `${chatId}:topic:${resolvedThreadId}` : String(chatId);
+    const debounceLane = resolveTelegramDebounceLane(msg);
     const debounceKey = senderId
-      ? `telegram:${accountId ?? "default"}:${conversationKey}:${senderId}`
+      ? `telegram:${accountId ?? "default"}:${conversationKey}:${senderId}:${debounceLane}`
       : null;
     await inboundDebouncer.enqueue({
       ctx,
@@ -692,6 +764,7 @@ export const registerTelegramHandlers = ({
       allMedia,
       storeAllowFrom,
       debounceKey,
+      debounceLane,
       botUsername: ctx.me?.username,
     });
   };
@@ -775,6 +848,7 @@ export const registerTelegramHandlers = ({
       const groupAllowContext = await resolveTelegramGroupAllowFromContext({
         chatId,
         accountId,
+        dmPolicy: telegramCfg.dmPolicy ?? "pairing",
         isForum,
         messageThreadId,
         groupAllowFrom,
@@ -788,11 +862,12 @@ export const registerTelegramHandlers = ({
         effectiveGroupAllow,
         hasGroupAllowOverride,
       } = groupAllowContext;
+      const dmPolicy = telegramCfg.dmPolicy ?? "pairing";
       const effectiveDmAllow = normalizeAllowFromWithStore({
         allowFrom: telegramCfg.allowFrom,
         storeAllowFrom,
+        dmPolicy,
       });
-      const dmPolicy = telegramCfg.dmPolicy ?? "pairing";
       const senderId = callback.from?.id ? String(callback.from.id) : "";
       const senderUsername = callback.from?.username ?? "";
       if (
@@ -933,13 +1008,14 @@ export const registerTelegramHandlers = ({
           const safePage = Math.max(1, Math.min(page, totalPages));
 
           // Resolve current model from session (prefer overrides)
-          const currentModel = resolveTelegramSessionModel({
+          const sessionState = resolveTelegramSessionState({
             chatId,
             isGroup,
             isForum,
             messageThreadId,
             resolvedThreadId,
           });
+          const currentModel = sessionState.model;
 
           const buttons = buildModelsKeyboard({
             provider,
@@ -949,7 +1025,13 @@ export const registerTelegramHandlers = ({
             totalPages,
             pageSize,
           });
-          const text = `Models (${provider}) — ${models.length} available`;
+          const text = formatModelsAvailableHeader({
+            provider,
+            total: models.length,
+            cfg,
+            agentDir: resolveAgentDir(cfg, sessionState.agentId),
+            sessionEntry: sessionState.sessionEntry,
+          });
           await editMessageWithButtons(text, buttons);
           return;
         }
@@ -1063,6 +1145,7 @@ export const registerTelegramHandlers = ({
       const groupAllowContext = await resolveTelegramGroupAllowFromContext({
         chatId: event.chatId,
         accountId,
+        dmPolicy: telegramCfg.dmPolicy ?? "pairing",
         isForum: event.isForum,
         messageThreadId: event.messageThreadId,
         groupAllowFrom,

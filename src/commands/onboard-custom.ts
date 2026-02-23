@@ -313,8 +313,14 @@ async function requestAnthropicVerification(params: {
   apiKey: string;
   modelId: string;
 }): Promise<VerificationResult> {
+  // Use a base URL with /v1 injected for this raw fetch only. The rest of the app uses the
+  // Anthropic client, which appends /v1 itself; config should store the base URL
+  // without /v1 to avoid /v1/v1/messages at runtime. See docs/gateway/configuration-reference.md.
+  const baseUrlForRequest = /\/v1\/?$/.test(params.baseUrl.trim())
+    ? params.baseUrl.trim()
+    : params.baseUrl.trim().replace(/\/?$/, "") + "/v1";
   const endpoint = resolveVerificationEndpoint({
-    baseUrl: params.baseUrl,
+    baseUrl: baseUrlForRequest,
     modelId: params.modelId,
     endpointPath: "messages",
   });
@@ -375,6 +381,26 @@ async function promptCustomApiModelId(prompter: WizardPrompter): Promise<string>
       validate: (val) => (val.trim() ? undefined : "Model ID is required"),
     })
   ).trim();
+}
+
+async function applyCustomApiRetryChoice(params: {
+  prompter: WizardPrompter;
+  retryChoice: CustomApiRetryChoice;
+  current: { baseUrl: string; apiKey: string; modelId: string };
+}): Promise<{ baseUrl: string; apiKey: string; modelId: string }> {
+  let { baseUrl, apiKey, modelId } = params.current;
+  if (params.retryChoice === "baseUrl" || params.retryChoice === "both") {
+    const retryInput = await promptBaseUrlAndKey({
+      prompter: params.prompter,
+      initialBaseUrl: baseUrl,
+    });
+    baseUrl = retryInput.baseUrl;
+    apiKey = retryInput.apiKey;
+  }
+  if (params.retryChoice === "model" || params.retryChoice === "both") {
+    modelId = await promptCustomApiModelId(params.prompter);
+  }
+  return { baseUrl, apiKey, modelId };
 }
 
 function resolveProviderApi(
@@ -612,17 +638,11 @@ export async function promptCustomApiConfig(params: {
             "Endpoint detection",
           );
           const retryChoice = await promptCustomApiRetryChoice(prompter);
-          if (retryChoice === "baseUrl" || retryChoice === "both") {
-            const retryInput = await promptBaseUrlAndKey({
-              prompter,
-              initialBaseUrl: baseUrl,
-            });
-            baseUrl = retryInput.baseUrl;
-            apiKey = retryInput.apiKey;
-          }
-          if (retryChoice === "model" || retryChoice === "both") {
-            modelId = await promptCustomApiModelId(prompter);
-          }
+          ({ baseUrl, apiKey, modelId } = await applyCustomApiRetryChoice({
+            prompter,
+            retryChoice,
+            current: { baseUrl, apiKey, modelId },
+          }));
           continue;
         }
       }
@@ -647,17 +667,11 @@ export async function promptCustomApiConfig(params: {
       verifySpinner.stop(`Verification failed: ${formatVerificationError(result.error)}`);
     }
     const retryChoice = await promptCustomApiRetryChoice(prompter);
-    if (retryChoice === "baseUrl" || retryChoice === "both") {
-      const retryInput = await promptBaseUrlAndKey({
-        prompter,
-        initialBaseUrl: baseUrl,
-      });
-      baseUrl = retryInput.baseUrl;
-      apiKey = retryInput.apiKey;
-    }
-    if (retryChoice === "model" || retryChoice === "both") {
-      modelId = await promptCustomApiModelId(prompter);
-    }
+    ({ baseUrl, apiKey, modelId } = await applyCustomApiRetryChoice({
+      prompter,
+      retryChoice,
+      current: { baseUrl, apiKey, modelId },
+    }));
     if (compatibilityChoice === "unknown") {
       compatibility = null;
     }

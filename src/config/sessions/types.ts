@@ -35,6 +35,8 @@ export type SessionEntry = {
   sessionFile?: string;
   /** Parent session key that spawned this session (used for sandbox session-tool scoping). */
   spawnedBy?: string;
+  /** True after a thread/topic session has been forked from its parent transcript once. */
+  forkedFromParent?: boolean;
   /** Subagent spawn depth (0 = main, 1 = sub-agent, 2 = sub-sub-agent). */
   spawnDepth?: number;
   systemSent?: boolean;
@@ -78,8 +80,17 @@ export type SessionEntry = {
    * totalTokens as stale/unknown for context-utilization displays.
    */
   totalTokensFresh?: boolean;
+  cacheRead?: number;
+  cacheWrite?: number;
   modelProvider?: string;
   model?: string;
+  /**
+   * Last selected/runtime model pair for which a fallback notice was emitted.
+   * Used to avoid repeating the same fallback notice every turn.
+   */
+  fallbackNoticeSelectedModel?: string;
+  fallbackNoticeActiveModel?: string;
+  fallbackNoticeReason?: string;
   contextTokens?: number;
   compactionCount?: number;
   memoryFlushAt?: number;
@@ -143,7 +154,7 @@ export type GroupKeyResolution = {
 
 export type SessionSkillSnapshot = {
   prompt: string;
-  skills: Array<{ name: string; primaryEnv?: string }>;
+  skills: Array<{ name: string; primaryEnv?: string; requiredEnv?: string[] }>;
   /** Normalized agent-level filter used to build this snapshot; undefined means unrestricted. */
   skillFilter?: string[];
   resolvedSkills?: Skill[];
