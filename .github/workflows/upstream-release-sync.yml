@@ -97,6 +97,24 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "upstream_count=${UPSTREAM_COUNT}" >> "$GITHUB_OUTPUT"
 
+          filter_workflow_updates() {
+            mapfile -t WORKFLOW_FILES < <(git diff --name-only origin/main -- .github/workflows)
+            if [ "${#WORKFLOW_FILES[@]}" -eq 0 ]; then
+              return 0
+            fi
+
+            echo "Detected workflow file changes from upstream; excluding them from automated sync branch."
+            git checkout origin/main -- .github/workflows
+            git add .github/workflows
+            git commit --amend --no-edit
+
+            {
+              echo "filtered_workflow_files<<EOF"
+              printf '%s\n' "${WORKFLOW_FILES[@]}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          }
+
           if git ls-remote --exit-code --heads origin "${BRANCH}" >/dev/null 2>&1; then
             echo "Remote branch ${BRANCH} already exists; skipping branch overwrite."
             git fetch --no-tags origin "refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
@@ -124,6 +142,24 @@ jobs:
           git checkout -B "${BRANCH}" "origin/main"
           if ! git merge --no-ff --no-edit "${TAG_REF}"; then
             mapfile -t CONFLICT_FILES < <(git diff --name-only --diff-filter=U)
+
+            if [ "${#CONFLICT_FILES[@]}" -eq 1 ] && [ "${CONFLICT_FILES[0]}" = "pnpm-lock.yaml" ]; then
+              echo "Only pnpm-lock.yaml conflicted; attempting automatic lockfile regeneration."
+
+              if corepack enable && corepack pnpm install --lockfile-only --ignore-scripts; then
+                git add pnpm-lock.yaml
+                git commit --no-edit
+                filter_workflow_updates
+                git push -u origin "${BRANCH}"
+
+                echo "needs_sync=true" >> "$GITHUB_OUTPUT"
+                echo "merge_conflict=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+
+              echo "Automatic pnpm lockfile regeneration failed; falling back to manual conflict flow."
+            fi
+
             git merge --abort || true
 
             # Create a metadata commit so the branch differs from main
@@ -153,6 +189,7 @@ jobs:
             exit 0
           fi
 
+          filter_workflow_updates
           git push -u origin "${BRANCH}"
 
           echo "needs_sync=true" >> "$GITHUB_OUTPUT"
@@ -274,6 +311,7 @@ jobs:
           BRANCH: ${{ steps.sync.outputs.branch }}
           UPSTREAM_LOG: ${{ steps.sync.outputs.upstream_log }}
           UPSTREAM_COUNT: ${{ steps.sync.outputs.upstream_count }}
+          FILTERED_WORKFLOW_FILES: ${{ steps.sync.outputs.filtered_workflow_files }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -283,6 +321,19 @@ jobs:
             const releaseUrl = process.env.TAG_URL || `https://github.com/openclaw/openclaw/releases/tag/${process.env.TAG}`;
             const upstreamLog = process.env.UPSTREAM_LOG || "(unable to retrieve)";
             const upstreamCount = process.env.UPSTREAM_COUNT || "?";
+            const filteredWorkflowFiles = (process.env.FILTERED_WORKFLOW_FILES || "")
+              .split("\n")
+              .map((item) => item.trim())
+              .filter(Boolean);
+            const filteredWorkflowSection =
+              filteredWorkflowFiles.length > 0
+                ? [
+                    "",
+                    "## Workflow files excluded from this automated sync",
+                    "These files were reset to `main` to avoid GitHub token restrictions on workflow-file updates:",
+                    ...filteredWorkflowFiles.map((file) => `- \`${file}\``),
+                  ]
+                : [];
 
             const body = [
               `Automated sync from upstream stable release \`${process.env.TAG}\`.`,
@@ -293,6 +344,7 @@ jobs:
               "```",
               upstreamLog,
               "```",
+              ...filteredWorkflowSection,
               "",
               "---",
               "This PR was created by `.github/workflows/upstream-release-sync.yml`.",
