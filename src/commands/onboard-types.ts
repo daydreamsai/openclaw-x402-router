@@ -15,6 +15,7 @@ export type AuthChoice =
   | "xai-api-key"
   | "qianfan-api-key"
   | "openrouter-api-key"
+  | "kilocode-api-key"
   | "litellm-api-key"
   | "ai-gateway-api-key"
   | "cloudflare-ai-gateway-api-key"
@@ -28,7 +29,6 @@ export type AuthChoice =
   | "codex-cli"
   | "apiKey"
   | "gemini-api-key"
-  | "google-antigravity"
   | "google-gemini-cli"
   | "zai-api-key"
   | "zai-coding-global"
@@ -60,6 +60,7 @@ export type AuthChoiceGroupId =
   | "google"
   | "copilot"
   | "openrouter"
+  | "kilocode"
   | "litellm"
   | "ai-gateway"
   | "cloudflare-ai-gateway"
@@ -111,6 +112,7 @@ export type OnboardOptions = {
   openaiApiKey?: string;
   mistralApiKey?: string;
   openrouterApiKey?: string;
+  kilocodeApiKey?: string;
   litellmApiKey?: string;
   aiGatewayApiKey?: string;
   cloudflareAiGatewayAccountId?: string;

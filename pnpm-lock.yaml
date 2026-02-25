@@ -280,13 +280,13 @@ importers:
       '@opentelemetry/api-logs':
         specifier: ^0.212.0
         version: 0.212.0
-      '@opentelemetry/exporter-logs-otlp-http':
+      '@opentelemetry/exporter-logs-otlp-proto':
         specifier: ^0.212.0
         version: 0.212.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/exporter-metrics-otlp-http':
+      '@opentelemetry/exporter-metrics-otlp-proto':
         specifier: ^0.212.0
         version: 0.212.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/exporter-trace-otlp-http':
+      '@opentelemetry/exporter-trace-otlp-proto':
         specifier: ^0.212.0
         version: 0.212.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/resources':
@@ -329,12 +329,6 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.3.6
-    devDependencies:
-      openclaw:
-        specifier: workspace:*
-        version: link:../..
-
-  extensions/google-antigravity-auth:
     devDependencies:
       openclaw:
         specifier: workspace:*
