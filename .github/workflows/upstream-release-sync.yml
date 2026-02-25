@@ -97,6 +97,40 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "upstream_count=${UPSTREAM_COUNT}" >> "$GITHUB_OUTPUT"
 
+          write_conflict_files_output() {
+            {
+              echo "conflict_files<<EOF"
+              if [ "$#" -gt 0 ]; then
+                printf '%s\n' "$@"
+              fi
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          detect_conflict_files_from_merge_probe() {
+            local start_ref probe_branch
+            start_ref="$(git rev-parse --verify HEAD)"
+            probe_branch="sync/probe-conflicts-${SAFE_TAG}-${GITHUB_RUN_ID:-$$}"
+
+            git checkout -B "${probe_branch}" "origin/main" >/dev/null 2>&1
+            if git merge --no-ff --no-edit "${TAG_REF}" >/dev/null 2>&1; then
+              git checkout -q "${start_ref}" >/dev/null 2>&1 || true
+              git branch -D "${probe_branch}" >/dev/null 2>&1 || true
+              return 10
+            fi
+
+            mapfile -t PROBE_CONFLICT_FILES < <(git diff --name-only --diff-filter=U)
+            git merge --abort >/dev/null 2>&1 || true
+            git checkout -q "${start_ref}" >/dev/null 2>&1 || true
+            git branch -D "${probe_branch}" >/dev/null 2>&1 || true
+
+            if [ "${#PROBE_CONFLICT_FILES[@]}" -eq 0 ]; then
+              return 1
+            fi
+
+            write_conflict_files_output "${PROBE_CONFLICT_FILES[@]}"
+          }
+
           filter_workflow_updates() {
             mapfile -t WORKFLOW_FILES < <(git diff --name-only origin/main -- .github/workflows)
             if [ "${#WORKFLOW_FILES[@]}" -eq 0 ]; then
@@ -121,6 +155,44 @@ jobs:
 
             if git cat-file -e "origin/${BRANCH}:.upstream-sync-pending" 2>/dev/null; then
               echo "Branch still has .upstream-sync-pending marker; keeping conflict PR flow."
+              set +e
+              detect_conflict_files_from_merge_probe
+              probe_status=$?
+              set -e
+
+              if [ "${probe_status}" -eq 10 ]; then
+                echo "No conflicts detected in probe; clearing stale marker and continuing sync."
+                git checkout -B "${BRANCH}" "origin/${BRANCH}"
+                git rm -f .upstream-sync-pending
+                git commit -m "chore: clear stale upstream sync marker for ${TAG}"
+
+                if ! git merge-base --is-ancestor "${TAG_REF}" "HEAD"; then
+                  if ! git merge --no-ff --no-edit "${TAG_REF}"; then
+                    mapfile -t RECOVERY_CONFLICT_FILES < <(git diff --name-only --diff-filter=U)
+                    echo "::warning::Recovery merge failed despite clean probe; falling back to conflict flow."
+                    git merge --abort || true
+                    echo "needs_sync=false" >> "$GITHUB_OUTPUT"
+                    echo "merge_conflict=true" >> "$GITHUB_OUTPUT"
+                    if [ "${#RECOVERY_CONFLICT_FILES[@]}" -gt 0 ]; then
+                      write_conflict_files_output "${RECOVERY_CONFLICT_FILES[@]}"
+                    else
+                      write_conflict_files_output "(recovery merge failed unexpectedly)"
+                    fi
+                    exit 0
+                  fi
+                fi
+
+                filter_workflow_updates
+                git push -u origin "${BRANCH}"
+
+                echo "needs_sync=true" >> "$GITHUB_OUTPUT"
+                echo "merge_conflict=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+
+              if [ "${probe_status}" -ne 0 ]; then
+                write_conflict_files_output "(conflict list unavailable: merge replay probe failed)"
+              fi
               echo "needs_sync=false" >> "$GITHUB_OUTPUT"
               echo "merge_conflict=true" >> "$GITHUB_OUTPUT"
               exit 0
@@ -134,6 +206,9 @@ jobs:
             fi
 
             echo "Branch exists but does not contain ${TAG}; leaving branch untouched."
+            if ! detect_conflict_files_from_merge_probe; then
+              write_conflict_files_output "(branch exists but does not contain upstream tag ${TAG})"
+            fi
             echo "needs_sync=false" >> "$GITHUB_OUTPUT"
             echo "merge_conflict=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -163,15 +238,15 @@ jobs:
             git merge --abort || true
 
             # Create a metadata commit so the branch differs from main
-            cat > .upstream-sync-pending <<MARKER
-          upstream_tag: ${TAG}
-          status: conflict
-          created: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-          This file was created by the upstream-release-sync workflow.
-          The merge of upstream tag ${TAG} into main produced conflicts.
-          Resolve them, delete this file, and push to this branch.
-          MARKER
+            {
+              echo "upstream_tag: ${TAG}"
+              echo "status: conflict"
+              echo "created: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              echo
+              echo "This file was created by the upstream-release-sync workflow."
+              echo "The merge of upstream tag ${TAG} into main produced conflicts."
+              echo "Resolve them, delete this file, and push to this branch."
+            } > .upstream-sync-pending
             git add .upstream-sync-pending
             git commit -m "chore: mark pending upstream sync for ${TAG} (conflicts)"
 
@@ -179,13 +254,7 @@ jobs:
 
             echo "needs_sync=false" >> "$GITHUB_OUTPUT"
             echo "merge_conflict=true" >> "$GITHUB_OUTPUT"
-            {
-              echo "conflict_files<<EOF"
-              if [ "${#CONFLICT_FILES[@]}" -gt 0 ]; then
-                printf '%s\n' "${CONFLICT_FILES[@]}"
-              fi
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
+            write_conflict_files_output "${CONFLICT_FILES[@]}"
             exit 0
           fi
 
