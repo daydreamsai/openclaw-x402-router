@@ -64,7 +64,7 @@ OPENCLAW_LUCID_SDK_SKILL_URL="${OPENCLAW_LUCID_SDK_SKILL_URL:-https://raw.github
 OPENCLAW_XGATE_ROUTER_SKILL_URL="${OPENCLAW_XGATE_ROUTER_SKILL_URL:-https://ai.xgate.run/SKILL.md}"
 
 if [[ -z "$OPENCLAW_SPEC" && -z "$OPENCLAW_REF" && -z "$OPENCLAW_BRANCH" ]]; then
-  OPENCLAW_REF="v2026.2.19.daydreams.1"
+  OPENCLAW_REF="v2026.2.24.daydreams.1"
 fi
 
 if [[ -n "$OPENCLAW_SPEC" && ( -n "$OPENCLAW_REF" || -n "$OPENCLAW_BRANCH" ) ]]; then
