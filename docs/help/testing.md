@@ -337,6 +337,11 @@ These run `pnpm test:live` inside the repo Docker image, mounting your local con
 - Plugins (custom extension load + registry smoke): `pnpm test:docker:plugins` (script: `scripts/e2e/plugins-docker.sh`)
 - Plugin + Daydreams router loop (run both in sequence): `pnpm test:docker:plugins-dreams-router:loop` (alias: `pnpm test:docker:plugins-live-router:loop`; script: `scripts/e2e/plugins-live-router-loop.ts`)
 
+Manual ACP plain-language thread smoke (not CI):
+
+- `bun scripts/dev/discord-acp-plain-language-smoke.ts --channel <discord-channel-id> ...`
+- Keep this script for regression/debug workflows. It may be needed again for ACP thread routing validation, so do not delete it.
+
 Useful env vars:
 
 - `OPENCLAW_CONFIG_DIR=...` (default: `~/.openclaw`) mounted to `/home/node/.openclaw`
